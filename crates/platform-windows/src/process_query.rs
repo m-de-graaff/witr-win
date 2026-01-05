@@ -157,9 +157,14 @@ pub fn get_user(pid: u32) -> WinResult<String> {
         // Open the process token
         let mut token_handle = HANDLE::default();
         OpenProcessToken(handle, TOKEN_QUERY, &mut token_handle).map_err(|e| {
-            WinError::ApiError {
-                api: "OpenProcessToken",
-                message: e.message().to_string(),
+            // Check for access denied (0x80070005 = ERROR_ACCESS_DENIED)
+            if e.code().0 as u32 == 0x80070005 {
+                WinError::AccessDenied { pid }
+            } else {
+                WinError::ApiError {
+                    api: "OpenProcessToken",
+                    message: e.message().to_string(),
+                }
             }
         })?;
 
