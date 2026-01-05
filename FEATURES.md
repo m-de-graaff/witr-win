@@ -44,36 +44,31 @@ This document tracks implemented features and planned enhancements for witr-win.
 - **CSV Output** - `witr-win --port 5000 --format csv`
 - **Markdown Output** - `witr-win --pid 1234 --format markdown`
 
-- **Interactive Mode** - `witr-win --interactive` (TUI with search/filter)
-  - Use `ratatui` or `crossterm` for TUI
+- ✅ **Interactive Mode** - `witr-win --interactive` or `witr-win -i`
+  - TUI with process list, search, sort, and filtering
+  - Navigate with arrow keys, Enter to analyze, / to search
 
 ### Advanced Features
 
-- **Process Dependencies Graph** - Visualize all dependencies
-  - `witr-win --pid 1234 --graph` (output as DOT/Graphviz)
+- ✅ **Process Dependencies Graph** - Visualize ancestry as DOT/Graphviz
+  - `witr-win --pid 1234 --graph` (pipe to `dot -Tpng` for image)
 
-- **Historical Analysis** - Track process changes over time
-  - Store snapshots, compare changes
+- ✅ **Historical Analysis** - Track process changes over time
+  - `witr-win --pid 1234 --snapshot myapp` - Save snapshot
+  - `witr-win --pid 1234 --compare myapp` - Compare with snapshot
+  - `witr-win --list-snapshots` - List all snapshots
 
 ### Security & Compliance
 
-- **Integrity Level Detection** - Show process integrity level (Low, Medium, High, System)
-- **Privilege Detection** - Show enabled privileges (SeDebugPrivilege, etc.)
-- **ASLR/DEP Status** - Show security mitigations
-- **Digital Signature Verification** - Verify process image signature
+- ✅ **Integrity Level Detection** - Show process integrity level (Low, Medium, High, System)
+- ✅ **Privilege Detection** - Show enabled privileges (SeDebugPrivilege, etc.) with dangerous privilege warnings
+- **ASLR/DEP Status** - Show security mitigations (requires additional Windows features)
+- **Digital Signature Verification** - Verify process image signature (requires WinTrust API)
 
 ### Quality of Life
 
-- **Aliases** - `witr-win p 1234` instead of `--pid 1234`
-- **Config File** - `~/.witr-win/config.toml` for defaults
-- **Caching** - Cache process info for faster repeated queries
-- **Better Error Messages** - More actionable error messages
-- **Exit Codes** - Proper exit codes for scripting
-
-### Integration
-
-- **PowerShell Module** - `Import-Module witr-win`
-- **VS Code Extension** - Right-click process → "Why is this running?"
-- **Windows Terminal Integration** - Context menu integration
-
+- ✅ **Aliases** - Short flags: `-p` for `--pid`, `-P` for `--port`, `-a` for `--all`
+- ✅ **Better Error Messages** - More actionable error messages with examples
+- ✅ **Exit Codes** - Proper exit codes for scripting (0=success, 1=error, 2=not found, 3=access denied, 4=invalid input)
+- ✅ **Config File** - `~/.witr-win/config.toml` for defaults (`--init-config` to generate)
 ---

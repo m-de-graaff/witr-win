@@ -22,6 +22,8 @@ pub mod process_query;
 #[cfg(windows)]
 pub mod process_snapshot;
 #[cfg(windows)]
+pub mod security;
+#[cfg(windows)]
 pub mod services;
 
 #[cfg(windows)]
@@ -42,6 +44,8 @@ pub use perf::*;
 pub use process_query::*;
 #[cfg(windows)]
 pub use process_snapshot::*;
+#[cfg(windows)]
+pub use security::*;
 #[cfg(windows)]
 pub use services::*;
 

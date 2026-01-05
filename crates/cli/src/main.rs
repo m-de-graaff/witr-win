@@ -20,14 +20,18 @@ use tabled::{
 };
 use witr_core::{render, Confidence, Report, SourceKind, Target, Warning};
 
+#[cfg(windows)]
+mod tui;
+
 /// Label width for aligned output
 const LABEL_WIDTH: usize = 12;
 
 #[cfg(windows)]
 use witr_platform_windows::{
     analyze_name, analyze_pid, analyze_port, get_connections_for_pid, get_interesting_env_vars,
-    get_process_performance, list_handles, list_modules, list_processes, pids_for_port, HandleInfo,
-    NameAnalysisResult, NetworkConnection, PortAnalysisResult,
+    get_process_performance, get_security_info, list_handles, list_modules, list_processes,
+    pids_for_port, HandleInfo, IntegrityLevel, NameAnalysisResult, NetworkConnection,
+    PortAnalysisResult, SecurityInfo,
 };
 
 /// Update checking module
@@ -266,6 +270,329 @@ mod update_check {
 ///
 /// A Windows-native CLI tool that explains why a process exists
 /// by building a causal chain of process ancestry and system signals.
+/// Exit codes for scripting
+mod exit_codes {
+    pub const SUCCESS: i32 = 0;
+    pub const ERROR_GENERAL: i32 = 1;
+    pub const ERROR_NOT_FOUND: i32 = 2;
+    pub const ERROR_ACCESS_DENIED: i32 = 3;
+    pub const ERROR_INVALID_INPUT: i32 = 4;
+}
+
+/// Configuration file support
+mod config {
+    use serde::Deserialize;
+    use std::fs;
+    use std::path::PathBuf;
+
+    /// User configuration from ~/.witr-win/config.toml
+    #[derive(Debug, Default, Deserialize)]
+    #[serde(default)]
+    pub struct Config {
+        /// Default output settings
+        pub output: OutputConfig,
+        /// Default flags
+        pub defaults: DefaultFlags,
+    }
+
+    #[derive(Debug, Default, Deserialize)]
+    #[serde(default)]
+    pub struct OutputConfig {
+        /// Disable colored output by default
+        pub no_color: bool,
+        /// Use JSON output by default
+        pub json: bool,
+        /// Use short output by default
+        pub short: bool,
+        /// Use tree output by default
+        pub tree: bool,
+    }
+
+    #[derive(Debug, Default, Deserialize)]
+    #[serde(default)]
+    pub struct DefaultFlags {
+        /// Always show verbose output
+        pub verbose: bool,
+        /// Always show modules
+        pub modules: bool,
+        /// Always show handles
+        pub handles: bool,
+        /// Always show performance metrics
+        pub perf: bool,
+        /// Always show network connections
+        pub net: bool,
+    }
+
+    /// Get the config file path
+    pub fn config_path() -> Option<PathBuf> {
+        dirs::home_dir().map(|h| h.join(".witr-win").join("config.toml"))
+    }
+
+    /// Load configuration from file
+    pub fn load_config() -> Config {
+        let Some(path) = config_path() else {
+            return Config::default();
+        };
+
+        if !path.exists() {
+            return Config::default();
+        }
+
+        match fs::read_to_string(&path) {
+            Ok(content) => toml::from_str(&content).unwrap_or_default(),
+            Err(_) => Config::default(),
+        }
+    }
+
+    /// Generate a sample config file content
+    pub fn sample_config() -> &'static str {
+        r#"# witr-win configuration file
+# Place this file at ~/.witr-win/config.toml
+
+[output]
+# Disable colored output
+no_color = false
+# Use JSON output by default
+json = false
+# Use short (one-line) output by default
+short = false
+# Use tree view by default
+tree = false
+
+[defaults]
+# Always show verbose output
+verbose = false
+# Always show loaded modules
+modules = false
+# Always show open handles
+handles = false
+# Always show performance metrics
+perf = false
+# Always show network connections
+net = false
+"#
+    }
+}
+
+/// Snapshot management for historical analysis
+mod snapshots {
+    use serde::{Deserialize, Serialize};
+    use std::collections::HashMap;
+    use std::fs;
+    use std::path::PathBuf;
+    use witr_core::Report;
+
+    /// A saved process snapshot
+    #[derive(Debug, Serialize, Deserialize)]
+    pub struct Snapshot {
+        pub name: String,
+        pub timestamp: String,
+        pub report: Report,
+    }
+
+    /// Get snapshots directory
+    pub fn snapshots_dir() -> Option<PathBuf> {
+        dirs::home_dir().map(|h| h.join(".witr-win").join("snapshots"))
+    }
+
+    /// Save a snapshot
+    pub fn save_snapshot(name: &str, report: &Report) -> Result<PathBuf, String> {
+        let dir = snapshots_dir().ok_or("Could not determine home directory")?;
+        fs::create_dir_all(&dir).map_err(|e| format!("Failed to create snapshots dir: {}", e))?;
+
+        let timestamp = time::OffsetDateTime::now_utc()
+            .format(&time::format_description::well_known::Rfc3339)
+            .unwrap_or_else(|_| "unknown".to_string());
+
+        let snapshot = Snapshot {
+            name: name.to_string(),
+            timestamp,
+            report: report.clone(),
+        };
+
+        let path = dir.join(format!("{}.json", name));
+        let json = serde_json::to_string_pretty(&snapshot)
+            .map_err(|e| format!("Failed to serialize snapshot: {}", e))?;
+        fs::write(&path, json).map_err(|e| format!("Failed to write snapshot: {}", e))?;
+
+        Ok(path)
+    }
+
+    /// Load a snapshot
+    pub fn load_snapshot(name: &str) -> Result<Snapshot, String> {
+        let dir = snapshots_dir().ok_or("Could not determine home directory")?;
+        let path = dir.join(format!("{}.json", name));
+
+        if !path.exists() {
+            return Err(format!("Snapshot '{}' not found", name));
+        }
+
+        let content =
+            fs::read_to_string(&path).map_err(|e| format!("Failed to read snapshot: {}", e))?;
+        serde_json::from_str(&content).map_err(|e| format!("Failed to parse snapshot: {}", e))
+    }
+
+    /// List all snapshots
+    pub fn list_snapshots() -> Result<Vec<(String, String)>, String> {
+        let dir = snapshots_dir().ok_or("Could not determine home directory")?;
+
+        if !dir.exists() {
+            return Ok(Vec::new());
+        }
+
+        let mut snapshots = Vec::new();
+        for entry in
+            fs::read_dir(&dir).map_err(|e| format!("Failed to read snapshots dir: {}", e))?
+        {
+            let entry = entry.map_err(|e| format!("Failed to read entry: {}", e))?;
+            let path = entry.path();
+            if path.extension().map(|e| e == "json").unwrap_or(false) {
+                if let Ok(content) = fs::read_to_string(&path) {
+                    if let Ok(snapshot) = serde_json::from_str::<Snapshot>(&content) {
+                        snapshots.push((snapshot.name, snapshot.timestamp));
+                    }
+                }
+            }
+        }
+
+        snapshots.sort_by(|a, b| b.1.cmp(&a.1)); // Sort by timestamp descending
+        Ok(snapshots)
+    }
+
+    /// Compare two reports and return differences
+    pub fn compare_reports(old: &Report, new: &Report) -> HashMap<String, (String, String)> {
+        let mut diffs = HashMap::new();
+
+        // Compare process info
+        if let (Some(old_proc), Some(new_proc)) = (&old.process, &new.process) {
+            if old_proc.memory_bytes != new_proc.memory_bytes {
+                diffs.insert(
+                    "Memory".to_string(),
+                    (
+                        format_mem(old_proc.memory_bytes),
+                        format_mem(new_proc.memory_bytes),
+                    ),
+                );
+            }
+            if old_proc.thread_count != new_proc.thread_count {
+                diffs.insert(
+                    "Threads".to_string(),
+                    (
+                        old_proc
+                            .thread_count
+                            .map(|t| t.to_string())
+                            .unwrap_or_default(),
+                        new_proc
+                            .thread_count
+                            .map(|t| t.to_string())
+                            .unwrap_or_default(),
+                    ),
+                );
+            }
+            if old_proc.working_dir != new_proc.working_dir {
+                diffs.insert(
+                    "Working Dir".to_string(),
+                    (
+                        old_proc.working_dir.clone().unwrap_or_default(),
+                        new_proc.working_dir.clone().unwrap_or_default(),
+                    ),
+                );
+            }
+        }
+
+        // Compare source classification
+        if old.source.description != new.source.description {
+            diffs.insert(
+                "Source".to_string(),
+                (
+                    old.source.description.clone(),
+                    new.source.description.clone(),
+                ),
+            );
+        }
+
+        diffs
+    }
+
+    fn format_mem(bytes: Option<u64>) -> String {
+        match bytes {
+            Some(b) if b >= 1_073_741_824 => format!("{:.1} GB", b as f64 / 1_073_741_824.0),
+            Some(b) if b >= 1_048_576 => format!("{:.1} MB", b as f64 / 1_048_576.0),
+            Some(b) if b >= 1024 => format!("{:.1} KB", b as f64 / 1024.0),
+            Some(b) => format!("{} B", b),
+            None => "N/A".to_string(),
+        }
+    }
+}
+
+/// Render report as DOT graph for Graphviz
+fn render_dot_graph(report: &Report) -> String {
+    let mut dot = String::new();
+    dot.push_str("digraph process_ancestry {\n");
+    dot.push_str("    rankdir=LR;\n");
+    dot.push_str("    node [shape=box, style=filled, fontname=\"Arial\"];\n");
+    dot.push_str("    edge [fontname=\"Arial\"];\n\n");
+
+    // Add target process node
+    if let Some(proc) = &report.process {
+        dot.push_str(&format!(
+            "    p{} [label=\"{}\nPID: {}\", fillcolor=\"#90EE90\"];\n",
+            proc.pid,
+            proc.name(),
+            proc.pid
+        ));
+    }
+
+    // Add ancestry nodes
+    for node in &report.ancestry {
+        let color = match node.relation {
+            witr_core::AncestryRelation::Parent => "#ADD8E6",
+            witr_core::AncestryRelation::Grandparent => "#B0C4DE",
+            witr_core::AncestryRelation::Ancestor => "#D3D3D3",
+            witr_core::AncestryRelation::Orphaned => "#FFB6C1",
+        };
+        dot.push_str(&format!(
+            "    p{} [label=\"{}\nPID: {}\", fillcolor=\"{}\"];\n",
+            node.process.pid,
+            node.process.name(),
+            node.process.pid,
+            color
+        ));
+    }
+
+    // Add edges (child -> parent)
+    if let Some(proc) = &report.process {
+        if let Some(parent) = report.ancestry.first() {
+            dot.push_str(&format!("    p{} -> p{};\n", proc.pid, parent.process.pid));
+        }
+    }
+
+    for i in 0..report.ancestry.len().saturating_sub(1) {
+        let child = &report.ancestry[i];
+        let parent = &report.ancestry[i + 1];
+        dot.push_str(&format!(
+            "    p{} -> p{};\n",
+            child.process.pid, parent.process.pid
+        ));
+    }
+
+    // Add source classification as a note
+    dot.push_str(&format!(
+        "\n    source [label=\"Source:\\n{}\", shape=note, fillcolor=\"#FFFACD\"];\n",
+        report.source.description.replace('"', "\\\"")
+    ));
+
+    if let Some(root) = report.ancestry.last() {
+        dot.push_str(&format!(
+            "    p{} -> source [style=dashed];\n",
+            root.process.pid
+        ));
+    }
+
+    dot.push_str("}\n");
+    dot
+}
+
 #[derive(Parser)]
 #[command(name = "witr-win")]
 #[command(version, about, long_about = None)]
@@ -276,12 +603,12 @@ mod update_check {
   witr-win --pid 1234 --json   Output as JSON for scripting
   witr-win --port 80 --tree    Show ancestry tree for port 80 owner")]
 struct Cli {
-    /// Process ID to analyze
-    #[arg(long, short = 'p', value_name = "PID")]
+    /// Process ID to analyze (alias: p)
+    #[arg(long, short = 'p', visible_alias = "p", value_name = "PID")]
     pid: Option<u32>,
 
-    /// Port number to find the owning process
-    #[arg(long, short = 'P', value_name = "PORT")]
+    /// Port number to find the owning process (alias: P)
+    #[arg(long, short = 'P', visible_alias = "P", value_name = "PORT")]
     port: Option<u16>,
 
     /// Process name to search for (supports partial matching)
@@ -324,6 +651,10 @@ struct Cli {
     #[arg(long, short = 'n')]
     net: bool,
 
+    /// Show security info (integrity level, privileges)
+    #[arg(long, short = 'S')]
+    security: bool,
+
     /// Check for updates and display notification if available
     #[arg(long)]
     check_update: bool,
@@ -331,6 +662,34 @@ struct Cli {
     /// Download and install the latest update
     #[arg(long)]
     update: bool,
+
+    /// Show all details (modules, handles, perf, net)
+    #[arg(long, short = 'a')]
+    all: bool,
+
+    /// Generate a sample config file at ~/.witr-win/config.toml
+    #[arg(long)]
+    init_config: bool,
+
+    /// Output process ancestry as DOT graph (for Graphviz)
+    #[arg(long)]
+    graph: bool,
+
+    /// Save a snapshot of the process for later comparison
+    #[arg(long, value_name = "NAME")]
+    snapshot: Option<String>,
+
+    /// Compare current process state with a saved snapshot
+    #[arg(long, value_name = "NAME")]
+    compare: Option<String>,
+
+    /// List all saved snapshots
+    #[arg(long)]
+    list_snapshots: bool,
+
+    /// Launch interactive TUI mode
+    #[arg(long, short = 'i')]
+    interactive: bool,
 }
 
 /// Color configuration for output
@@ -375,7 +734,49 @@ impl Colors {
 }
 
 fn main() {
-    let cli = Cli::parse();
+    // Load configuration file
+    let cfg = config::load_config();
+
+    let mut cli = Cli::parse();
+
+    // Apply config defaults (CLI flags override config)
+    if !cli.no_color && cfg.output.no_color {
+        cli.no_color = true;
+    }
+    if !cli.json && cfg.output.json {
+        cli.json = true;
+    }
+    if !cli.short && cfg.output.short {
+        cli.short = true;
+    }
+    if !cli.tree && cfg.output.tree {
+        cli.tree = true;
+    }
+    if !cli.verbose && cfg.defaults.verbose {
+        cli.verbose = true;
+    }
+    if !cli.modules && cfg.defaults.modules {
+        cli.modules = true;
+    }
+    if !cli.handles && cfg.defaults.handles {
+        cli.handles = true;
+    }
+    if !cli.perf && cfg.defaults.perf {
+        cli.perf = true;
+    }
+    if !cli.net && cfg.defaults.net {
+        cli.net = true;
+    }
+
+    // Handle --all flag: enable all detail flags
+    if cli.all {
+        cli.modules = true;
+        cli.handles = true;
+        cli.perf = true;
+        cli.net = true;
+        cli.security = true;
+        cli.verbose = true;
+    }
 
     // Determine color mode
     let colors = Colors::new(!cli.no_color && supports_color());
@@ -391,6 +792,35 @@ fn main() {
         return;
     }
 
+    if cli.init_config {
+        handle_init_config(&colors);
+        return;
+    }
+
+    if cli.list_snapshots {
+        handle_list_snapshots(&colors);
+        return;
+    }
+
+    // Handle interactive mode
+    #[cfg(windows)]
+    if cli.interactive {
+        match tui::run_interactive_and_get_pid() {
+            Ok(Some(pid)) => {
+                // User selected a process, analyze it
+                cli.pid = Some(pid);
+            }
+            Ok(None) => {
+                // User quit without selecting
+                return;
+            }
+            Err(e) => {
+                print_error(&colors, &e);
+                std::process::exit(exit_codes::ERROR_GENERAL);
+            }
+        }
+    }
+
     // Validate input
     let target_count = [cli.pid.is_some(), cli.port.is_some(), cli.name.is_some()]
         .iter()
@@ -403,17 +833,25 @@ fn main() {
         eprintln!("Usage: witr-win [OPTIONS] [NAME]");
         eprintln!();
         eprintln!("Specify one of:");
-        eprintln!("  --pid <PID>     Analyze a process by PID");
-        eprintln!("  --port <PORT>   Find process listening on port");
+        eprintln!("  --pid <PID>     Analyze a process by PID (short: -p)");
+        eprintln!("  --port <PORT>   Find process listening on port (short: -P)");
         eprintln!("  <NAME>          Search for process by name");
         eprintln!();
+        eprintln!("Quick examples:");
+        eprintln!("  witr-win -p 1234          # Analyze PID 1234");
+        eprintln!("  witr-win -P 3000          # What's on port 3000?");
+        eprintln!("  witr-win chrome           # Find Chrome processes");
+        eprintln!("  witr-win -p 1234 --all    # Show everything");
+        eprintln!();
         eprintln!("Run 'witr-win --help' for more information.");
-        std::process::exit(1);
+        std::process::exit(exit_codes::ERROR_INVALID_INPUT);
     }
 
     if target_count > 1 {
         print_error(&colors, "Only one target can be specified at a time");
-        std::process::exit(1);
+        eprintln!();
+        eprintln!("Use one of: --pid, --port, or <NAME>");
+        std::process::exit(exit_codes::ERROR_INVALID_INPUT);
     }
 
     // Check for updates before executing operations (non-blocking)
@@ -431,8 +869,16 @@ fn main() {
     };
 
     if let Err(e) = result {
-        print_error(&colors, &format!("Error: {}", e));
-        std::process::exit(1);
+        // Determine appropriate exit code based on error
+        let exit_code = if e.contains("not found") || e.contains("No process") {
+            exit_codes::ERROR_NOT_FOUND
+        } else if e.contains("Access denied") || e.contains("permission") {
+            exit_codes::ERROR_ACCESS_DENIED
+        } else {
+            exit_codes::ERROR_GENERAL
+        };
+        print_error(&colors, &e);
+        std::process::exit(exit_code);
     }
 }
 
@@ -440,14 +886,90 @@ fn main() {
 fn handle_check_update(colors: &Colors) {
     if let Some((latest_version, release_url, _)) = update_check::check_for_updates() {
         update_check::display_update_notification(colors, &latest_version, &release_url);
-        std::process::exit(0);
+        std::process::exit(exit_codes::SUCCESS);
     } else {
         eprintln!(
             "{} You are using the latest version ({})",
             "info:".style(colors.info),
             env!("CARGO_PKG_VERSION")
         );
-        std::process::exit(0);
+        std::process::exit(exit_codes::SUCCESS);
+    }
+}
+
+/// Handle --init-config flag
+fn handle_init_config(colors: &Colors) {
+    use std::fs;
+
+    let Some(config_path) = config::config_path() else {
+        print_error(colors, "Could not determine home directory");
+        std::process::exit(exit_codes::ERROR_GENERAL);
+    };
+
+    // Create directory if it doesn't exist
+    if let Some(parent) = config_path.parent() {
+        if let Err(e) = fs::create_dir_all(parent) {
+            print_error(colors, &format!("Failed to create config directory: {}", e));
+            std::process::exit(exit_codes::ERROR_GENERAL);
+        }
+    }
+
+    // Check if config already exists
+    if config_path.exists() {
+        eprintln!(
+            "{} Config file already exists at: {}",
+            "warning:".style(colors.warning),
+            config_path.display()
+        );
+        eprintln!("Use a text editor to modify it, or delete it first to regenerate.");
+        std::process::exit(exit_codes::SUCCESS);
+    }
+
+    // Write sample config
+    match fs::write(&config_path, config::sample_config()) {
+        Ok(()) => {
+            eprintln!(
+                "{} Created config file at: {}",
+                "success:".style(colors.success),
+                config_path.display()
+            );
+            eprintln!();
+            eprintln!("Edit this file to customize default behavior.");
+            std::process::exit(exit_codes::SUCCESS);
+        }
+        Err(e) => {
+            print_error(colors, &format!("Failed to write config file: {}", e));
+            std::process::exit(exit_codes::ERROR_GENERAL);
+        }
+    }
+}
+
+/// Handle --list-snapshots flag
+fn handle_list_snapshots(colors: &Colors) {
+    match snapshots::list_snapshots() {
+        Ok(list) if list.is_empty() => {
+            eprintln!("{} No snapshots saved yet.", "info:".style(colors.info));
+            eprintln!("Use --snapshot <name> to save a snapshot.");
+            std::process::exit(exit_codes::SUCCESS);
+        }
+        Ok(list) => {
+            eprintln!("{} Saved snapshots:\n", "info:".style(colors.info));
+            for (name, timestamp) in list {
+                eprintln!(
+                    "  {} {} ({})",
+                    "•".style(colors.info),
+                    name.style(colors.header),
+                    timestamp.style(colors.dim)
+                );
+            }
+            eprintln!();
+            eprintln!("Use --compare <name> to compare with current state.");
+            std::process::exit(exit_codes::SUCCESS);
+        }
+        Err(e) => {
+            print_error(colors, &e);
+            std::process::exit(exit_codes::ERROR_GENERAL);
+        }
     }
 }
 
@@ -482,7 +1004,7 @@ fn handle_update(colors: &Colors) {
                     "{} If it still shows the old version, you may be running a different witr-win.exe from your PATH.",
                     "warning:".style(colors.warning)
                 );
-                std::process::exit(0);
+                std::process::exit(exit_codes::SUCCESS);
             }
             Err(e) => {
                 print_error(colors, &format!("Update failed: {}", e));
@@ -491,7 +1013,7 @@ fn handle_update(colors: &Colors) {
                     "info:".style(colors.info),
                     release_url
                 );
-                std::process::exit(1);
+                std::process::exit(exit_codes::ERROR_GENERAL);
             }
         }
     } else {
@@ -500,7 +1022,7 @@ fn handle_update(colors: &Colors) {
             "info:".style(colors.info),
             env!("CARGO_PKG_VERSION")
         );
-        std::process::exit(0);
+        std::process::exit(exit_codes::SUCCESS);
     }
 }
 
@@ -582,9 +1104,14 @@ fn handle_port(port: u16, cli: &Cli, colors: &Colors) -> Result<(), String> {
         return Err(format!("No process found listening on port {}", port));
     }
 
-    // Handle warnings about listening publicly
+    // Handle warnings about listening publicly (filter out exited process warnings)
     for warning in &result.warnings {
-        print_warning(colors, &format!("{:?}", warning));
+        if !matches!(
+            warning,
+            Warning::ParentExited { .. } | Warning::ProcessExited
+        ) {
+            print_warning(colors, &format_warning(warning));
+        }
     }
 
     if result.has_multiple_pids() {
@@ -654,12 +1181,71 @@ fn handle_name(name: &str, cli: &Cli, colors: &Colors) -> Result<(), String> {
 
 /// Render a single report based on output format
 fn render_report(report: &Report, cli: &Cli, colors: &Colors) {
+    // Handle snapshot saving
+    if let Some(ref name) = cli.snapshot {
+        match snapshots::save_snapshot(name, report) {
+            Ok(path) => {
+                eprintln!(
+                    "{} Snapshot saved to: {}",
+                    "success:".style(colors.success),
+                    path.display()
+                );
+            }
+            Err(e) => {
+                print_error(colors, &format!("Failed to save snapshot: {}", e));
+            }
+        }
+    }
+
+    // Handle comparison with saved snapshot
+    if let Some(ref name) = cli.compare {
+        match snapshots::load_snapshot(name) {
+            Ok(snapshot) => {
+                let diffs = snapshots::compare_reports(&snapshot.report, report);
+                if diffs.is_empty() {
+                    eprintln!(
+                        "{} No changes detected since snapshot '{}' ({})",
+                        "info:".style(colors.info),
+                        name,
+                        snapshot.timestamp
+                    );
+                } else {
+                    eprintln!(
+                        "{} Changes since snapshot '{}' ({}):\n",
+                        "info:".style(colors.info),
+                        name,
+                        snapshot.timestamp
+                    );
+                    for (field, (old, new)) in &diffs {
+                        eprintln!(
+                            "  {} {}: {} → {}",
+                            "→".style(colors.warning),
+                            field.style(colors.header),
+                            old.style(colors.dim),
+                            new.style(colors.success)
+                        );
+                    }
+                    eprintln!();
+                }
+            }
+            Err(e) => {
+                print_error(colors, &e);
+            }
+        }
+    }
+
+    // Handle graph output
+    if cli.graph {
+        println!("{}", render_dot_graph(report));
+        return;
+    }
+
     if cli.json {
         match render::json::render_json_string(report) {
             Ok(json) => println!("{}", json),
             Err(e) => {
                 print_error(colors, &format!("Failed to render JSON: {}", e));
-                std::process::exit(1);
+                std::process::exit(exit_codes::ERROR_GENERAL);
             }
         }
     } else if cli.short {
@@ -681,7 +1267,7 @@ fn render_port_result(result: &PortAnalysisResult, cli: &Cli, colors: &Colors) {
             Ok(json) => println!("{}", json),
             Err(e) => {
                 print_error(colors, &format!("Failed to render JSON: {}", e));
-                std::process::exit(1);
+                std::process::exit(exit_codes::ERROR_GENERAL);
             }
         }
     } else {
@@ -733,7 +1319,7 @@ fn render_name_result(result: &NameAnalysisResult, cli: &Cli, colors: &Colors) {
             Ok(json) => println!("{}", json),
             Err(e) => {
                 print_error(colors, &format!("Failed to render JSON: {}", e));
-                std::process::exit(1);
+                std::process::exit(exit_codes::ERROR_GENERAL);
             }
         }
     } else if result.reports.len() > 5 {
@@ -1154,6 +1740,98 @@ fn print_perf_section(
     writeln!(out).ok();
 }
 
+/// Print security information section
+#[cfg(windows)]
+fn print_security_section(
+    out: &mut impl Write,
+    security: &SecurityInfo,
+    cli: &Cli,
+    colors: &Colors,
+) {
+    print_section(out, "Security", colors.header);
+
+    // Integrity level with color coding
+    let integrity_style = match security.integrity_level {
+        IntegrityLevel::System | IntegrityLevel::Protected => colors.warning,
+        IntegrityLevel::High => colors.success,
+        IntegrityLevel::Low | IntegrityLevel::Untrusted => colors.error,
+        _ => colors.dim,
+    };
+    print_sub_item(
+        out,
+        &format!(
+            "Integrity: {}",
+            security.integrity_level.to_string().style(integrity_style)
+        ),
+        Style::new(),
+    );
+
+    // Enabled privileges (only show if verbose or there are interesting ones)
+    let enabled_privs: Vec<_> = security.privileges.iter().filter(|p| p.enabled).collect();
+
+    if !enabled_privs.is_empty() {
+        writeln!(out).ok();
+        print_sub_item(
+            out,
+            &format!("Privileges: ({} enabled)", enabled_privs.len()),
+            colors.info,
+        );
+
+        // Highlight dangerous privileges
+        let dangerous = [
+            "SeDebugPrivilege",
+            "SeTcbPrivilege",
+            "SeAssignPrimaryTokenPrivilege",
+            "SeLoadDriverPrivilege",
+            "SeBackupPrivilege",
+            "SeRestorePrivilege",
+            "SeTakeOwnershipPrivilege",
+            "SeImpersonatePrivilege",
+        ];
+
+        for priv_info in &enabled_privs {
+            let is_dangerous = dangerous.iter().any(|d| priv_info.name.contains(d));
+            let style = if is_dangerous {
+                colors.warning
+            } else {
+                colors.dim
+            };
+            let prefix = if is_dangerous { "⚠ " } else { "  " };
+            print_sub_item(
+                out,
+                &format!("{}{}", prefix, priv_info.name.style(style)),
+                Style::new(),
+            );
+        }
+
+        // In verbose mode, also show disabled privileges
+        if cli.verbose {
+            let disabled_privs: Vec<_> =
+                security.privileges.iter().filter(|p| !p.enabled).collect();
+            if !disabled_privs.is_empty() {
+                writeln!(out).ok();
+                print_sub_item(
+                    out,
+                    &format!("Disabled: ({} privileges)", disabled_privs.len()),
+                    colors.dim,
+                );
+                for priv_info in disabled_privs.iter().take(10) {
+                    print_sub_item(out, &format!("  {}", priv_info.name), colors.dim);
+                }
+                if disabled_privs.len() > 10 {
+                    print_sub_item(
+                        out,
+                        &format!("  ... and {} more", disabled_privs.len() - 10),
+                        colors.dim,
+                    );
+                }
+            }
+        }
+    }
+
+    writeln!(out).ok();
+}
+
 /// Print network connections section
 #[cfg(windows)]
 fn print_network_section(out: &mut impl Write, connections: &[NetworkConnection], colors: &Colors) {
@@ -1292,15 +1970,11 @@ fn print_colored_report(report: &Report, cli: &Cli, colors: &Colors) {
             .ancestry
             .iter()
             .rev() // Reverse to show from root to target
+            .filter(|node| node.relation != witr_core::AncestryRelation::Orphaned) // Skip exited processes
             .map(|node| {
-                let name = if node.relation == witr_core::AncestryRelation::Orphaned {
-                    "exited"
-                } else {
-                    node.process.name()
-                };
                 format!(
                     "{} (pid {})",
-                    name.style(colors.info),
+                    node.process.name().style(colors.info),
                     node.process.pid.to_string().style(colors.dim)
                 )
             })
@@ -1377,10 +2051,15 @@ fn print_colored_report(report: &Report, cli: &Cli, colors: &Colors) {
         }
     }
 
-    // Warnings section
-    if !report.warnings.is_empty() {
+    // Warnings section (filter out exited process warnings - these are noise)
+    let filtered_warnings: Vec<_> = report
+        .warnings
+        .iter()
+        .filter(|w| !matches!(w, Warning::ParentExited { .. } | Warning::ProcessExited))
+        .collect();
+    if !filtered_warnings.is_empty() {
         print_section(&mut out, "Warnings", colors.warning);
-        for warning in &report.warnings {
+        for warning in filtered_warnings {
             print_sub_item(
                 &mut out,
                 &format!("• {}", format_warning(warning)),
@@ -1527,6 +2206,25 @@ fn print_colored_report(report: &Report, cli: &Cli, colors: &Colors) {
                     print_sub_item(
                         &mut out,
                         &format!("⚠ Could not get network connections: {}", e),
+                        colors.warning,
+                    );
+                }
+            }
+        }
+    }
+
+    // Security information (if --security flag is used)
+    #[cfg(windows)]
+    if cli.security {
+        if let Some(proc) = &report.process {
+            match get_security_info(proc.pid) {
+                Ok(security) => {
+                    print_security_section(&mut out, &security, cli, colors);
+                }
+                Err(e) => {
+                    print_sub_item(
+                        &mut out,
+                        &format!("⚠ Could not get security info: {}", e),
                         colors.warning,
                     );
                 }
@@ -1718,17 +2416,17 @@ fn supports_color() -> bool {
 #[cfg(not(windows))]
 fn handle_pid(_pid: u32, _cli: &Cli, colors: &Colors) -> Result<(), String> {
     print_error(colors, "This tool only works on Windows");
-    std::process::exit(1);
+    std::process::exit(exit_codes::ERROR_GENERAL);
 }
 
 #[cfg(not(windows))]
 fn handle_port(_port: u16, _cli: &Cli, colors: &Colors) -> Result<(), String> {
     print_error(colors, "This tool only works on Windows");
-    std::process::exit(1);
+    std::process::exit(exit_codes::ERROR_GENERAL);
 }
 
 #[cfg(not(windows))]
 fn handle_name(_name: &str, _cli: &Cli, colors: &Colors) -> Result<(), String> {
     print_error(colors, "This tool only works on Windows");
-    std::process::exit(1);
+    std::process::exit(exit_codes::ERROR_GENERAL);
 }

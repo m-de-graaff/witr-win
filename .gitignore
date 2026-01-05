@@ -1,5 +1,10 @@
 # Build artifacts
 /target
+/dist
+
+# Cargo
+Cargo.lock
+*.rlib
 
 # IDE
 .idea/
@@ -7,10 +12,13 @@
 *.swp
 *.swo
 *~
+.cursor/
 
 # OS
 .DS_Store
 Thumbs.db
+Desktop.ini
+ehthumbs.db
 
 # Logs
 *.log
@@ -18,3 +26,28 @@ Thumbs.db
 # Local development
 .env
 .env.local
+.env.*.local
+
+# Debug
+*.pdb
+*.dmp
+
+# Package managers
+node_modules/
+
+# Test artifacts
+*.profraw
+*.profdata
+coverage/
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.orig
+
+# Demo folder (local testing)
+demo/
+
+# Windows specific
+*.exe.stackdump
