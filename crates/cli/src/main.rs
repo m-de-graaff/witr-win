@@ -173,7 +173,8 @@ fn resolve_target_to_pids(target: &witr_core::Target) -> Result<Vec<u32>, String
             pids_for_port(*port).map_err(|e| format!("Failed to resolve port {}: {}", port, e))
         }
         witr_core::Target::Name(name) => {
-            let processes = list_processes().map_err(|e| format!("Failed to list processes: {}", e))?;
+            let processes =
+                list_processes().map_err(|e| format!("Failed to list processes: {}", e))?;
             let name_lower = name.to_lowercase();
             let mut pids: Vec<u32> = processes
                 .values()
@@ -216,7 +217,10 @@ fn handle_pid(pid: u32, cli: &Cli, colors: &Colors) -> Result<(), String> {
 #[cfg(windows)]
 fn handle_port(port: u16, cli: &Cli, colors: &Colors) -> Result<(), String> {
     if cli.verbose {
-        print_info(colors, &format!("Finding process listening on port {}...", port));
+        print_info(
+            colors,
+            &format!("Finding process listening on port {}...", port),
+        );
     }
 
     let result = analyze_port(port).map_err(|e| e.to_string())?;
@@ -250,7 +254,10 @@ fn handle_port(port: u16, cli: &Cli, colors: &Colors) -> Result<(), String> {
 #[cfg(windows)]
 fn handle_name(name: &str, cli: &Cli, colors: &Colors) -> Result<(), String> {
     if cli.verbose {
-        print_info(colors, &format!("Searching for processes matching '{}'...", name));
+        print_info(
+            colors,
+            &format!("Searching for processes matching '{}'...", name),
+        );
     }
 
     let result = analyze_name(name).map_err(|e| e.to_string())?;
@@ -331,14 +338,15 @@ fn render_port_result(result: &PortAnalysisResult, cli: &Cli, colors: &Colors) {
                 println!("{}", "─".repeat(60).style(colors.dim));
                 println!();
             }
-            
+
             // Show listening interfaces for port queries
             if matches!(report.target, Target::Port(_)) {
-                let bindings: Vec<_> = result.bindings
+                let bindings: Vec<_> = result
+                    .bindings
                     .iter()
                     .filter(|b| b.pid == report.process.as_ref().map(|p| p.pid).unwrap_or(0))
                     .collect();
-                
+
                 if !bindings.is_empty() {
                     let stdout = io::stdout();
                     let mut out = stdout.lock();
@@ -356,7 +364,7 @@ fn render_port_result(result: &PortAnalysisResult, cli: &Cli, colors: &Colors) {
                     writeln!(out).ok();
                 }
             }
-            
+
             render_report(report, cli, colors);
         }
     }
@@ -387,12 +395,12 @@ fn render_name_result(result: &NameAnalysisResult, cli: &Cli, colors: &Colors) {
 fn format_relative_time(dt: &time::OffsetDateTime) -> String {
     let now = time::OffsetDateTime::now_utc();
     let duration = now - *dt;
-    
+
     let days = duration.whole_days();
     let hours = duration.whole_hours();
     let minutes = duration.whole_minutes();
     let seconds = duration.whole_seconds();
-    
+
     if days > 90 {
         format!("{} days ago", days)
     } else if days > 0 {
@@ -400,9 +408,17 @@ fn format_relative_time(dt: &time::OffsetDateTime) -> String {
     } else if hours > 0 {
         format!("{} hour{} ago", hours, if hours == 1 { "" } else { "s" })
     } else if minutes > 0 {
-        format!("{} minute{} ago", minutes, if minutes == 1 { "" } else { "s" })
+        format!(
+            "{} minute{} ago",
+            minutes,
+            if minutes == 1 { "" } else { "s" }
+        )
     } else {
-        format!("{} second{} ago", seconds, if seconds == 1 { "" } else { "s" })
+        format!(
+            "{} second{} ago",
+            seconds,
+            if seconds == 1 { "" } else { "s" }
+        )
     }
 }
 
@@ -427,13 +443,13 @@ fn print_colored_report(report: &Report, cli: &Cli, colors: &Colors) {
         // Process name with PID and optional flags
         let flags: Vec<String> = Vec::new();
         // TODO: Add memory check for [high-mem] flag
-        
+
         let flags_str = if flags.is_empty() {
             String::new()
         } else {
             format!(" [{}]", flags.join(", "))
         };
-        
+
         writeln!(
             out,
             "{}: {} (PID {}){}",
@@ -485,17 +501,18 @@ fn print_colored_report(report: &Report, cli: &Cli, colors: &Colors) {
 
     // "Why It Exists" section - compact format
     writeln!(out, "{}", "Why It Exists".style(colors.header)).ok();
-    
+
     // Ancestry (show parent chain)
     if !report.ancestry.is_empty() {
         write!(out, "  {}: ", "Ancestry".style(colors.dim)).ok();
-        let chain: Vec<String> = report.ancestry
+        let chain: Vec<String> = report
+            .ancestry
             .iter()
             .map(|node| format!("{} (PID {})", node.process.name(), node.process.pid))
             .collect();
         writeln!(out, "{}", chain.join(" → ").style(colors.highlight)).ok();
     }
-    
+
     // Source classification
     let kind_style = match report.source.kind {
         SourceKind::Service => colors.info,
@@ -505,7 +522,7 @@ fn print_colored_report(report: &Report, cli: &Cli, colors: &Colors) {
         SourceKind::ContainerLike => colors.info,
         SourceKind::Unknown => colors.dim,
     };
-    
+
     writeln!(
         out,
         "  {}: {}",
@@ -513,7 +530,7 @@ fn print_colored_report(report: &Report, cli: &Cli, colors: &Colors) {
         report.source.description.style(kind_style)
     )
     .ok();
-    
+
     if let Some(service) = &report.source.service_name {
         writeln!(
             out,
@@ -523,7 +540,7 @@ fn print_colored_report(report: &Report, cli: &Cli, colors: &Colors) {
         )
         .ok();
     }
-    
+
     writeln!(out).ok();
 
     // Evidence (verbose only)
@@ -638,7 +655,10 @@ fn format_warning(warning: &Warning) -> String {
     match warning {
         Warning::NoAdminPrivileges => "Running without admin privileges".to_string(),
         Warning::ParentExited { last_known_ppid } => {
-            format!("Parent process exited (last known PPID: {})", last_known_ppid)
+            format!(
+                "Parent process exited (last known PPID: {})",
+                last_known_ppid
+            )
         }
         Warning::ProcessExited => "Process exited during analysis".to_string(),
         Warning::AccessDenied { what } => format!("Access denied: {}", what),
@@ -695,10 +715,10 @@ fn supports_color() -> bool {
     #[cfg(windows)]
     {
         use std::os::windows::io::AsRawHandle;
+        use windows::Win32::Foundation::HANDLE;
         use windows::Win32::System::Console::{
             GetConsoleMode, SetConsoleMode, ENABLE_VIRTUAL_TERMINAL_PROCESSING,
         };
-        use windows::Win32::Foundation::HANDLE;
 
         let stdout = io::stdout();
         let handle = HANDLE(stdout.as_raw_handle() as _);

@@ -308,7 +308,7 @@ mod tests {
         #[test]
         fn test_build_ancestry_with_fake_table() {
             let table = create_fake_process_table();
-            
+
             // Test building ancestry for notepad.exe (400) -> explorer.exe (300) -> svchost.exe (200) -> services.exe (100) -> System (4)
             // Note: build_ancestry will try to query real process info, which may fail for fake PIDs
             // So we test the structure and logic, not the full Windows API calls
@@ -334,10 +334,10 @@ mod tests {
         #[test]
         fn test_build_ancestry_terminates_at_system_idle() {
             let table = create_fake_process_table();
-            
+
             // System process (PID 4) has parent 0 (System Idle)
             let result = build_ancestry(4, Some(&table)).expect("Should build ancestry");
-            
+
             // Should terminate at System Idle (PID 0), so ancestry should be empty or minimal
             // (System Idle is not included in ancestry as it's a termination condition)
             assert!(result.ancestry.is_empty() || result.ancestry.len() <= 1);
@@ -346,7 +346,7 @@ mod tests {
         #[test]
         fn test_build_ancestry_handles_orphaned_process() {
             let mut table = create_fake_process_table();
-            
+
             // Create an orphaned process (parent is itself or 0)
             table.insert(
                 999,
@@ -366,7 +366,7 @@ mod tests {
         #[test]
         fn test_build_ancestry_detects_cycles() {
             let mut table = create_fake_process_table();
-            
+
             // Create a cycle: 500 -> 501 -> 500
             table.insert(
                 500,
@@ -388,7 +388,7 @@ mod tests {
             );
 
             let result = build_ancestry(500, Some(&table));
-            
+
             // The function may fail due to Windows API calls, but if it succeeds, verify cycle detection
             if let Ok(ancestry_result) = result {
                 // Should detect cycle and stop, or have warnings about cycle

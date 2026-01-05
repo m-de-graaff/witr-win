@@ -666,7 +666,10 @@ mod tests {
                         } else {
                             Some(parent_entry.ppid)
                         },
-                        image_path: Some(format!("C:\\Windows\\System32\\{}", parent_entry.exe_name)),
+                        image_path: Some(format!(
+                            "C:\\Windows\\System32\\{}",
+                            parent_entry.exe_name
+                        )),
                         user: None,
                         start_time: None,
                         cmdline: None,
@@ -714,7 +717,7 @@ mod tests {
             assert!(service.is_some());
             let service = service.unwrap();
             assert_eq!(service.name, "TestService");
-            
+
             // Verify the context has the right structure for service classification
             assert!(ctx.process_table.contains_key(&200));
         }
@@ -726,7 +729,7 @@ mod tests {
             let entry = table.get(&400).unwrap();
             let parent = table.get(&entry.ppid).unwrap();
             assert_eq!(parent.exe_name.to_lowercase(), "explorer.exe");
-            
+
             // Verify is_interactive_descendant logic
             assert!(is_interactive_descendant(400, &table));
         }

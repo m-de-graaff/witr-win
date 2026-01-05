@@ -135,7 +135,7 @@ fn test_analyze_spawned_process() {
 fn test_tcp_listener_port_lookup() {
     // Bind to a specific high port (unlikely to be in use)
     let test_port = 54321u16;
-    
+
     // Try to bind - if port is in use, skip test
     let listener = match TcpListener::bind(format!("127.0.0.1:{}", test_port)) {
         Ok(l) => l,
@@ -155,9 +155,9 @@ fn test_tcp_listener_port_lookup() {
 
     // Should find our binding
     use witr_platform_windows::net::Protocol;
-    let has_our_binding = bindings.iter().any(|b| {
-        b.pid == current_pid && b.local_port == test_port && b.protocol == Protocol::Tcp
-    });
+    let has_our_binding = bindings
+        .iter()
+        .any(|b| b.pid == current_pid && b.local_port == test_port && b.protocol == Protocol::Tcp);
 
     assert!(
         has_our_binding,
@@ -170,4 +170,3 @@ fn test_tcp_listener_port_lookup() {
     // Drop listener
     drop(listener);
 }
-
