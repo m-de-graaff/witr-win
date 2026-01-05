@@ -11,7 +11,7 @@
     <summary>Why Is This Running? — Windows Edition. A CLI tool that explains why a process exists.</summary>
     <releaseNotes>https://github.com/m-de-graaff/witr-win/releases</releaseNotes>
     <copyright>Copyright © 2024 Mark de Graaff</copyright>
-    <license type="expression">MIT</license>
+    <licenseUrl>https://github.com/m-de-graaff/witr-win/blob/main/LICENSE</licenseUrl>
     <requireLicenseAcceptance>false</requireLicenseAcceptance>
     <tags>process process-monitor windows cli system-admin</tags>
     <packageSourceUrl>https://github.com/m-de-graaff/witr-win</packageSourceUrl>
