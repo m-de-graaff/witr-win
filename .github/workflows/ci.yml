@@ -138,8 +138,13 @@ jobs:
         run: |
           $tag = "${{ github.ref }}"
           $version = $tag -replace 'refs/tags/v', ''
-          (Get-Content crates/cli/wix.toml) -replace 'product-version = ".*"', "product-version = `"$version`"" | Set-Content crates/cli/wix.toml
-          (Get-Content crates/cli/wix/main.wxs) -replace 'Version="[^"]*"', "Version=`"$version`"" | Set-Content crates/cli/wix/main.wxs
+          $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+          $wixToml = Get-Content crates/cli/wix.toml -Raw
+          $wixToml = $wixToml -replace 'product-version = ".*"', "product-version = `"$version`""
+          [System.IO.File]::WriteAllText("$PWD/crates/cli/wix.toml", $wixToml, $utf8NoBom)
+          $mainWxs = Get-Content crates/cli/wix/main.wxs -Raw
+          $mainWxs = $mainWxs -replace 'Version="[^"]*"', "Version=`"$version`""
+          [System.IO.File]::WriteAllText("$PWD/crates/cli/wix/main.wxs", $mainWxs, $utf8NoBom)
           Write-Host "Updated WiX version to $version"
       
       - name: Install cargo-wix
