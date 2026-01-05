@@ -90,6 +90,7 @@ jobs:
           $tag = "${{ github.ref }}"
           $version = $tag -replace 'refs/tags/v', ''
           Write-Host "version=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "VERSION=$version" >> $env:GITHUB_ENV
           Write-Host "Extracted version: $version"
       
       - name: Build release
@@ -100,14 +101,23 @@ jobs:
         run: |
           $exeHash = (Get-FileHash -Path target/release/witr-win.exe -Algorithm SHA256).Hash
           Write-Host "exeHash=$exeHash" >> $env:GITHUB_OUTPUT
+          Write-Host "EXEHASH=$exeHash" >> $env:GITHUB_ENV
           "$exeHash  witr-win.exe" | Out-File -FilePath witr-win.exe.sha256 -Encoding utf8
           Write-Host "SHA256 checksum: $exeHash"
           Get-Content witr-win.exe.sha256
       
       - name: Update Scoop manifest
         run: |
-          $version = "${{ steps.version.outputs.version }}"
-          $hash = "${{ steps.checksums.outputs.exeHash }}"
+          $version = if ($env:VERSION) { $env:VERSION } else { "${{ steps.version.outputs.version }}" }
+          $hash = if ($env:EXEHASH) { $env:EXEHASH } else { "${{ steps.checksums.outputs.exeHash }}" }
+          if ([string]::IsNullOrEmpty($version)) {
+            Write-Error "Version is empty! VERSION env: $env:VERSION, step output: ${{ steps.version.outputs.version }}"
+            exit 1
+          }
+          if ([string]::IsNullOrEmpty($hash)) {
+            Write-Error "Hash is empty! EXEHASH env: $env:EXEHASH, step output: ${{ steps.checksums.outputs.exeHash }}"
+            exit 1
+          }
           $manifest = Get-Content witr-win.json -Raw | ConvertFrom-Json
           $manifest.version = $version
           $manifest.url = "https://github.com/m-de-graaff/witr-win/releases/download/v$version/witr-win.exe"
@@ -118,7 +128,11 @@ jobs:
       
       - name: Update Chocolatey package
         run: |
-          $version = "${{ steps.version.outputs.version }}"
+          $version = if ($env:VERSION) { $env:VERSION } else { "${{ steps.version.outputs.version }}" }
+          if ([string]::IsNullOrEmpty($version)) {
+            Write-Error "Version is empty!"
+            exit 1
+          }
           # Update nuspec
           $nuspec = [xml](Get-Content chocolatey/witr-win.nuspec)
           $nuspec.package.metadata.version = $version
@@ -131,7 +145,11 @@ jobs:
       
       - name: Update WiX version
         run: |
-          $version = "${{ steps.version.outputs.version }}"
+          $version = if ($env:VERSION) { $env:VERSION } else { "${{ steps.version.outputs.version }}" }
+          if ([string]::IsNullOrEmpty($version)) {
+            Write-Error "Version is empty!"
+            exit 1
+          }
           (Get-Content crates/cli/wix.toml) -replace 'product-version = ".*"', "product-version = `"$version`"" | Set-Content crates/cli/wix.toml
           (Get-Content crates/cli/wix/main.wxs) -replace 'Version="[^"]*"', "Version=`"$version`"" | Set-Content crates/cli/wix/main.wxs
           Write-Host "Updated WiX version to $version"
@@ -142,7 +160,7 @@ jobs:
       - name: Build MSI installer
         run: |
           cd crates/cli
-          cargo wix --nocapture
+          cargo wix --package witr --nocapture
           if (Test-Path "../../target/wix/witr-win.msi") {
             Write-Host "MSI built successfully"
           } else {

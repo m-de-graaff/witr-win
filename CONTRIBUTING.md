@@ -82,6 +82,25 @@ cargo test
 cargo build --release
 ```
 
+### Git Hooks (Automatic Checks)
+
+This repository includes git hooks that automatically run checks before commits and pushes:
+
+**Setup (one-time):**
+```powershell
+.\setup-git-hooks.ps1
+```
+
+**What the hooks do:**
+- **Pre-commit**: Runs `cargo fmt --all --check` and `cargo clippy` to ensure code quality
+- **Pre-push**: Runs `cargo test` to ensure all tests pass
+
+**To skip hooks temporarily** (use sparingly):
+```powershell
+git commit --no-verify
+git push --no-verify
+```
+
 ## Submitting Changes
 
 ### Pull Request Process

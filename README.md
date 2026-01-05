@@ -222,7 +222,12 @@ cargo test
 # Run lints
 cargo clippy -- -D warnings
 cargo fmt --check
+
+# Setup git hooks (optional, but recommended)
+.\setup-git-hooks.ps1
 ```
+
+**Git Hooks**: The repository includes pre-commit and pre-push hooks that automatically run `cargo fmt`, `cargo clippy`, and `cargo test`. Run `.\setup-git-hooks.ps1` to install them.
 
 ## 📜 License
 

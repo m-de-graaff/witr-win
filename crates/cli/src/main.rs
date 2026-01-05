@@ -112,7 +112,7 @@ mod update_check {
         // Get current executable path
         let current_exe = std::env::current_exe()
             .map_err(|e| format!("Failed to get current executable path: {}", e))?;
-        
+
         eprintln!(
             "{} Updating executable at: {}",
             "info:".style(colors.info),
@@ -189,9 +189,9 @@ mod update_check {
                     Ok(metadata) => {
                         if metadata.len() != temp_metadata.len() {
                             let _ = fs::rename(&old_exe, &current_exe);
-                            return Err(format!(
-                                "Copied file size mismatch. Old version restored."
-                            ));
+                            return Err(
+                                "Copied file size mismatch. Old version restored.".to_string()
+                            );
                         }
                     }
                     Err(e) => {
