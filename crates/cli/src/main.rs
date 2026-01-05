@@ -29,7 +29,8 @@ mod update_check {
     use std::fs;
     use std::path::{Path, PathBuf};
 
-    const GITHUB_API_URL: &str = "https://api.github.com/repos/m-de-graaff/witr-win/releases/latest";
+    const GITHUB_API_URL: &str =
+        "https://api.github.com/repos/m-de-graaff/witr-win/releases/latest";
     const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
     #[derive(Deserialize)]
@@ -59,10 +60,10 @@ mod update_check {
         }
 
         let release: GitHubRelease = response.json().ok()?;
-        
+
         // Extract version from tag (e.g., "v0.2.0" -> "0.2.0")
         let latest_version = release.tag_name.trim_start_matches('v');
-        
+
         // Compare versions using semver
         if let (Ok(current), Ok(latest)) = (
             semver::Version::parse(CURRENT_VERSION),
@@ -75,7 +76,7 @@ mod update_check {
                     .iter()
                     .find(|asset| asset.name == "witr-win.exe")
                     .map(|asset| asset.browser_download_url.clone())?;
-                
+
                 return Some((latest_version.to_string(), release.html_url, download_url));
             }
         }
@@ -84,12 +85,12 @@ mod update_check {
     }
 
     /// Download and install the update
-    pub fn download_and_install_update(colors: &Colors, download_url: &str, new_version: &str) -> Result<(), String> {
-        eprintln!(
-            "{} {}",
-            "info:".style(colors.info),
-            "Downloading update..."
-        );
+    pub fn download_and_install_update(
+        colors: &Colors,
+        download_url: &str,
+        new_version: &str,
+    ) -> Result<(), String> {
+        eprintln!("{} {}", "info:".style(colors.info), "Downloading update...");
 
         let client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
@@ -103,7 +104,10 @@ mod update_check {
             .map_err(|e| format!("Failed to download update: {}", e))?;
 
         if !response.status().is_success() {
-            return Err(format!("Download failed with status: {}", response.status()));
+            return Err(format!(
+                "Download failed with status: {}",
+                response.status()
+            ));
         }
 
         // Get current executable path
@@ -129,17 +133,13 @@ mod update_check {
 
         drop(file);
 
-        eprintln!(
-            "{} {}",
-            "info:".style(colors.info),
-            "Installing update..."
-        );
+        eprintln!("{} {}", "info:".style(colors.info), "Installing update...");
 
         // On Windows, we can't replace a running executable directly
         // Strategy: rename current exe to .old, then copy new one
         // This works because Windows allows renaming files that are in use
         let old_exe = current_exe.with_extension("exe.old");
-        
+
         // Remove old backup if it exists
         if old_exe.exists() {
             let _ = fs::remove_file(&old_exe);
@@ -160,11 +160,14 @@ mod update_check {
                 let _ = fs::remove_file(&temp_file);
                 // Try to remove old exe, but don't fail if it's still in use
                 let _ = fs::remove_file(&old_exe);
-                
+
                 eprintln!(
                     "{} {}",
                     "success:".style(colors.success),
-                    format!("Update installed successfully! New version: {}", new_version)
+                    format!(
+                        "Update installed successfully! New version: {}",
+                        new_version
+                    )
                 );
                 eprintln!(
                     "{} {}",
@@ -176,11 +179,13 @@ mod update_check {
             Err(e) => {
                 // If copy fails, try to restore the old exe
                 let _ = fs::rename(&old_exe, &current_exe);
-                Err(format!("Failed to install update: {}. The old version has been restored.", e))
+                Err(format!(
+                    "Failed to install update: {}. The old version has been restored.",
+                    e
+                ))
             }
         }
     }
-
 
     /// Display update notification in pnpm style
     pub fn display_update_notification(colors: &Colors, latest_version: &str, release_url: &str) {
@@ -373,7 +378,10 @@ fn handle_check_update(colors: &Colors) {
         eprintln!(
             "{} {}",
             "info:".style(colors.info),
-            format!("You are using the latest version ({})", env!("CARGO_PKG_VERSION"))
+            format!(
+                "You are using the latest version ({})",
+                env!("CARGO_PKG_VERSION")
+            )
         );
         std::process::exit(0);
     }
@@ -409,7 +417,10 @@ fn handle_update(colors: &Colors) {
         eprintln!(
             "{} {}",
             "info:".style(colors.info),
-            format!("You are using the latest version ({})", env!("CARGO_PKG_VERSION"))
+            format!(
+                "You are using the latest version ({})",
+                env!("CARGO_PKG_VERSION")
+            )
         );
         std::process::exit(0);
     }

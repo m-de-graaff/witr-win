@@ -112,27 +112,26 @@ This document outlines potential features and enhancements for witr-win beyond t
 
 ## 📦 Distribution & Installation
 
-- **Scoop Manifest** - Community-friendly package manager
-  ```json
-  {
-    "version": "0.2.0",
-    "url": "https://github.com/m-de-graaff/witr-win/releases/download/v0.2.0/witr-win.exe",
-    "hash": "..."
-  }
-  ```
+- **Scoop Manifest** - Community-friendly package manager ✅
+  - Created `witr-win.json` manifest file
+  - Auto-update support via checkver
+  - Ready for submission to Scoop bucket
 
-- **Chocolatey Package** - More ceremony, but widely used
-  - Create `witr-win.nuspec`
+- **Chocolatey Package** - More ceremony, but widely used ✅
+  - Created `chocolatey/witr-win.nuspec`
+  - Installation and uninstallation scripts
   - Auto-update support
 
-- **MSI Installer** - Professional installation
-  - Use `cargo-wix` or `wix` toolset
+- **MSI Installer** - Professional installation ✅
+  - Created `wix.toml` for cargo-wix
+  - Created `wix/main.wxs` WiX source file
   - Add to PATH automatically
   - Uninstaller support
 
-<!-- - **Auto-update** - `witr-win --update` or `witr-win --check-update`
+- **Auto-update** - `witr-win --update` or `witr-win --check-update` ✅
   - Check GitHub releases API
-  - Download and replace binary -->
+  - Download and replace binary
+  - Automatic update notifications on every run
 
 ## 🔒 Security & Compliance
 

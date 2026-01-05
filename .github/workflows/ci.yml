@@ -84,8 +84,80 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
       
+      - name: Extract version from tag
+        id: version
+        run: |
+          $tag = "${{ github.ref }}"
+          $version = $tag -replace 'refs/tags/v', ''
+          Write-Host "version=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "Extracted version: $version"
+      
       - name: Build release
         run: cargo build --release
+      
+      - name: Generate SHA256 checksums
+        id: checksums
+        run: |
+          $exeHash = (Get-FileHash -Path target/release/witr-win.exe -Algorithm SHA256).Hash
+          Write-Host "exeHash=$exeHash" >> $env:GITHUB_OUTPUT
+          "$exeHash  witr-win.exe" | Out-File -FilePath witr-win.exe.sha256 -Encoding utf8
+          Write-Host "SHA256 checksum: $exeHash"
+          Get-Content witr-win.exe.sha256
+      
+      - name: Update Scoop manifest
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $hash = "${{ steps.checksums.outputs.exeHash }}"
+          $manifest = Get-Content witr-win.json -Raw | ConvertFrom-Json
+          $manifest.version = $version
+          $manifest.url = "https://github.com/m-de-graaff/witr-win/releases/download/v$version/witr-win.exe"
+          $manifest.hash = "sha256:$hash"
+          $manifest.autoupdate.url = "https://github.com/m-de-graaff/witr-win/releases/download/v`$version/witr-win.exe"
+          $manifest | ConvertTo-Json -Depth 10 | Set-Content witr-win.json
+          Write-Host "Updated Scoop manifest with version $version and hash $hash"
+      
+      - name: Update Chocolatey package
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          # Update nuspec
+          $nuspec = [xml](Get-Content chocolatey/witr-win.nuspec)
+          $nuspec.package.metadata.version = $version
+          $nuspec.Save("$PWD/chocolatey/witr-win.nuspec")
+          # Update install script version
+          $installScript = Get-Content chocolatey/tools/chocolateyinstall.ps1 -Raw
+          $installScript = $installScript -replace "\$version = '[^']+'", "`$version = '$version'"
+          $installScript | Set-Content chocolatey/tools/chocolateyinstall.ps1
+          Write-Host "Updated Chocolatey package to version $version"
+      
+      - name: Update WiX version
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          (Get-Content wix.toml) -replace 'product-version = ".*"', "product-version = `"$version`"" | Set-Content wix.toml
+          Write-Host "Updated WiX version to $version (cargo-wix will use this from wix.toml)"
+      
+      - name: Install cargo-wix
+        run: cargo install cargo-wix --locked
+      
+      - name: Build MSI installer
+        run: |
+          cargo wix --nocapture
+          if (Test-Path "target/wix/witr-win.msi") {
+            Write-Host "MSI built successfully"
+          } else {
+            Write-Error "MSI build failed"
+            exit 1
+          }
+      
+      - name: Build Chocolatey package
+        run: |
+          if (-not (Test-Path "dist")) { New-Item -ItemType Directory -Path "dist" | Out-Null }
+          choco pack chocolatey/witr-win.nuspec --output-directory=dist
+          if (Test-Path "dist/witr-win.${{ steps.version.outputs.version }}.nupkg") {
+            Write-Host "Chocolatey package built successfully"
+          } else {
+            Write-Error "Chocolatey package build failed"
+            exit 1
+          }
       
       - name: Create release directory
         run: |
@@ -97,16 +169,8 @@ jobs:
       - name: Create release archive
         run: |
           Compress-Archive -Path release/* -DestinationPath witr-x86_64-pc-windows-msvc.zip -Force
-      
-      - name: Generate SHA256 checksums
-        run: |
-          $exeHash = (Get-FileHash -Path target/release/witr-win.exe -Algorithm SHA256).Hash
           $zipHash = (Get-FileHash -Path witr-x86_64-pc-windows-msvc.zip -Algorithm SHA256).Hash
-          "$exeHash  witr-win.exe" | Out-File -FilePath witr-win.exe.sha256 -Encoding utf8
           "$zipHash  witr-x86_64-pc-windows-msvc.zip" | Out-File -FilePath witr-x86_64-pc-windows-msvc.zip.sha256 -Encoding utf8
-          Write-Host "SHA256 checksums generated"
-          Get-Content witr-win.exe.sha256
-          Get-Content witr-x86_64-pc-windows-msvc.zip.sha256
       
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
@@ -116,6 +180,9 @@ jobs:
             witr-win.exe.sha256
             witr-x86_64-pc-windows-msvc.zip
             witr-x86_64-pc-windows-msvc.zip.sha256
+            target/wix/witr-win.msi
+            dist/witr-win.${{ steps.version.outputs.version }}.nupkg
+            witr-win.json
           generate_release_notes: true
           draft: false
           prerelease: ${{ contains(github.ref, '-') }}

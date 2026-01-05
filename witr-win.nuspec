@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>witr-win</id>
+    <version>0.2.1</version>
+    <title>witr-win</title>
+    <authors>Mark de Graaff</authors>
+    <owners>m-de-graaff</owners>
+    <projectUrl>https://github.com/m-de-graaff/witr-win</projectUrl>
+    <description>Windows-native CLI tool that explains why a process exists by building a causal chain of process ancestry and system signals.</description>
+    <summary>Why Is This Running? — Windows Edition. A CLI tool that explains why a process exists.</summary>
+    <releaseNotes>https://github.com/m-de-graaff/witr-win/releases</releaseNotes>
+    <copyright>Copyright © 2024 Mark de Graaff</copyright>
+    <license type="expression">MIT</license>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <tags>process process-monitor windows cli system-admin</tags>
+    <packageSourceUrl>https://github.com/m-de-graaff/witr-win</packageSourceUrl>
+    <projectSourceUrl>https://github.com/m-de-graaff/witr-win</projectSourceUrl>
+    <docsUrl>https://github.com/m-de-graaff/witr-win#readme</docsUrl>
+    <bugTrackerUrl>https://github.com/m-de-graaff/witr-win/issues</bugTrackerUrl>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+  </files>
+</package>
+
