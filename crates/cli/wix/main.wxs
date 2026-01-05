@@ -22,7 +22,7 @@
       <Directory Id="ProgramMenuFolder">
         <Directory Id="ApplicationProgramsFolder" Name="witr-win">
           <Component Id="ApplicationShortcut" Guid="9C712DB9-770E-4E14-8961-D676FFDD7C00">
-            <Shortcut Id="ApplicationStartMenuShortcut" Name="witr-win" Description="Why Is This Running? — Windows Edition" Target="[#witr-win.exe]" WorkingDirectory="INSTALLFOLDER" />
+            <Shortcut Id="ApplicationStartMenuShortcut" Name="witr-win" Description="Why Is This Running? â€” Windows Edition" Target="[#witr-win.exe]" WorkingDirectory="INSTALLFOLDER" />
             <RemoveFolder Id="ApplicationProgramsFolder" On="uninstall" />
             <RegistryValue Root="HKCU" Key="Software\witr-win" Name="installed" Type="integer" Value="1" KeyPath="yes" />
           </Component>
@@ -31,4 +31,3 @@
     </Directory>
   </Product>
 </Wix>
-
