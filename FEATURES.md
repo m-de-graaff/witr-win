@@ -115,8 +115,8 @@ This document outlines potential features and enhancements for witr-win beyond t
 - **Scoop Manifest** - Community-friendly package manager
   ```json
   {
-    "version": "0.1.0",
-    "url": "https://github.com/m-de-graaff/witr-win/releases/download/v0.1.0/witr-win.exe",
+    "version": "0.2.0",
+    "url": "https://github.com/m-de-graaff/witr-win/releases/download/v0.2.0/witr-win.exe",
     "hash": "..."
   }
   ```
