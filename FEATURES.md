@@ -130,9 +130,9 @@ This document outlines potential features and enhancements for witr-win beyond t
   - Add to PATH automatically
   - Uninstaller support
 
-- **Auto-update** - `witr-win --update` or `witr-win --check-update`
+<!-- - **Auto-update** - `witr-win --update` or `witr-win --check-update`
   - Check GitHub releases API
-  - Download and replace binary
+  - Download and replace binary -->
 
 ## 🔒 Security & Compliance
 

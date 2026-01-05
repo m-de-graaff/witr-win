@@ -22,6 +22,190 @@ use witr_platform_windows::{
     PortAnalysisResult,
 };
 
+/// Update checking module
+mod update_check {
+    use super::*;
+    use serde::Deserialize;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+
+    const GITHUB_API_URL: &str = "https://api.github.com/repos/m-de-graaff/witr-win/releases/latest";
+    const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+    #[derive(Deserialize)]
+    struct GitHubRelease {
+        tag_name: String,
+        html_url: String,
+        assets: Vec<ReleaseAsset>,
+    }
+
+    #[derive(Deserialize)]
+    struct ReleaseAsset {
+        name: String,
+        browser_download_url: String,
+    }
+
+    /// Check if a newer version is available
+    pub fn check_for_updates() -> Option<(String, String, String)> {
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(5))
+            .user_agent("witr-win")
+            .build()
+            .ok()?;
+
+        let response = client.get(GITHUB_API_URL).send().ok()?;
+        if !response.status().is_success() {
+            return None;
+        }
+
+        let release: GitHubRelease = response.json().ok()?;
+        
+        // Extract version from tag (e.g., "v0.2.0" -> "0.2.0")
+        let latest_version = release.tag_name.trim_start_matches('v');
+        
+        // Compare versions using semver
+        if let (Ok(current), Ok(latest)) = (
+            semver::Version::parse(CURRENT_VERSION),
+            semver::Version::parse(latest_version),
+        ) {
+            if latest > current {
+                // Find the download URL for witr-win.exe
+                let download_url = release
+                    .assets
+                    .iter()
+                    .find(|asset| asset.name == "witr-win.exe")
+                    .map(|asset| asset.browser_download_url.clone())?;
+                
+                return Some((latest_version.to_string(), release.html_url, download_url));
+            }
+        }
+
+        None
+    }
+
+    /// Download and install the update
+    pub fn download_and_install_update(colors: &Colors, download_url: &str, new_version: &str) -> Result<(), String> {
+        eprintln!(
+            "{} {}",
+            "info:".style(colors.info),
+            "Downloading update..."
+        );
+
+        let client = reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .user_agent("witr-win")
+            .build()
+            .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+        let response = client
+            .get(download_url)
+            .send()
+            .map_err(|e| format!("Failed to download update: {}", e))?;
+
+        if !response.status().is_success() {
+            return Err(format!("Download failed with status: {}", response.status()));
+        }
+
+        // Get current executable path
+        let current_exe = std::env::current_exe()
+            .map_err(|e| format!("Failed to get current executable path: {}", e))?;
+
+        // Create temp file for download
+        let temp_dir = std::env::temp_dir();
+        let temp_file = temp_dir.join(format!("witr-win-update-{}.exe", std::process::id()));
+
+        // Download to temp file
+        let mut file = fs::File::create(&temp_file)
+            .map_err(|e| format!("Failed to create temp file: {}", e))?;
+
+        let mut content = std::io::Cursor::new(
+            response
+                .bytes()
+                .map_err(|e| format!("Failed to read response: {}", e))?,
+        );
+
+        std::io::copy(&mut content, &mut file)
+            .map_err(|e| format!("Failed to write to temp file: {}", e))?;
+
+        drop(file);
+
+        eprintln!(
+            "{} {}",
+            "info:".style(colors.info),
+            "Installing update..."
+        );
+
+        // On Windows, we can't replace a running executable directly
+        // Strategy: rename current exe to .old, then copy new one
+        // This works because Windows allows renaming files that are in use
+        let old_exe = current_exe.with_extension("exe.old");
+        
+        // Remove old backup if it exists
+        if old_exe.exists() {
+            let _ = fs::remove_file(&old_exe);
+        }
+
+        // Rename current exe to .old (Windows allows this even if file is in use)
+        if let Err(e) = fs::rename(&current_exe, &old_exe) {
+            return Err(format!(
+                "Failed to rename current executable: {}. Please close all instances of witr-win and try again.",
+                e
+            ));
+        }
+
+        // Now copy the new exe to the original location
+        match fs::copy(&temp_file, &current_exe) {
+            Ok(_) => {
+                // Success! Clean up temp file and try to remove old exe
+                let _ = fs::remove_file(&temp_file);
+                // Try to remove old exe, but don't fail if it's still in use
+                let _ = fs::remove_file(&old_exe);
+                
+                eprintln!(
+                    "{} {}",
+                    "success:".style(colors.success),
+                    format!("Update installed successfully! New version: {}", new_version)
+                );
+                eprintln!(
+                    "{} {}",
+                    "info:".style(colors.info),
+                    "Please restart witr-win to use the new version."
+                );
+                Ok(())
+            }
+            Err(e) => {
+                // If copy fails, try to restore the old exe
+                let _ = fs::rename(&old_exe, &current_exe);
+                Err(format!("Failed to install update: {}. The old version has been restored.", e))
+            }
+        }
+    }
+
+
+    /// Display update notification in pnpm style
+    pub fn display_update_notification(colors: &Colors, latest_version: &str, release_url: &str) {
+        eprintln!();
+        eprintln!(
+            "{} {} {} {}",
+            "Update available!".style(colors.warning),
+            CURRENT_VERSION.style(colors.dim),
+            "→".style(colors.dim),
+            latest_version.style(colors.success)
+        );
+        eprintln!(
+            "{} {}",
+            "Run".style(colors.dim),
+            format!("witr-win --update",).style(colors.info)
+        );
+        eprintln!(
+            "{} {}",
+            "Or visit:".style(colors.dim),
+            release_url.style(colors.info)
+        );
+        eprintln!();
+    }
+}
+
 /// Why Is This Running? - Windows Edition
 ///
 /// A Windows-native CLI tool that explains why a process exists
@@ -67,6 +251,14 @@ struct Cli {
     /// Show verbose output including all evidence
     #[arg(long, short = 'v')]
     verbose: bool,
+
+    /// Check for updates and display notification if available
+    #[arg(long)]
+    check_update: bool,
+
+    /// Download and install the latest update
+    #[arg(long)]
+    update: bool,
 }
 
 /// Color configuration for output
@@ -116,6 +308,17 @@ fn main() {
     // Determine color mode
     let colors = Colors::new(!cli.no_color && supports_color());
 
+    // Handle update flags
+    if cli.update {
+        handle_update(&colors);
+        return;
+    }
+
+    if cli.check_update {
+        handle_check_update(&colors);
+        return;
+    }
+
     // Validate input
     let target_count = [cli.pid.is_some(), cli.port.is_some(), cli.name.is_some()]
         .iter()
@@ -141,6 +344,9 @@ fn main() {
         std::process::exit(1);
     }
 
+    // Check for updates before executing operations (non-blocking)
+    check_and_notify_updates(&colors);
+
     // Route to appropriate handler
     let result = if let Some(pid) = cli.pid {
         handle_pid(pid, &cli, &colors)
@@ -155,6 +361,64 @@ fn main() {
     if let Err(e) = result {
         print_error(&colors, &format!("Error: {}", e));
         std::process::exit(1);
+    }
+}
+
+/// Handle --check-update flag
+fn handle_check_update(colors: &Colors) {
+    if let Some((latest_version, release_url, _)) = update_check::check_for_updates() {
+        update_check::display_update_notification(colors, &latest_version, &release_url);
+        std::process::exit(0);
+    } else {
+        eprintln!(
+            "{} {}",
+            "info:".style(colors.info),
+            format!("You are using the latest version ({})", env!("CARGO_PKG_VERSION"))
+        );
+        std::process::exit(0);
+    }
+}
+
+/// Handle --update flag
+fn handle_update(colors: &Colors) {
+    if let Some((latest_version, release_url, download_url)) = update_check::check_for_updates() {
+        eprintln!(
+            "{} {} {} {}",
+            "info:".style(colors.info),
+            "Update available:".style(colors.info),
+            env!("CARGO_PKG_VERSION").style(colors.dim),
+            format!("→ {}", latest_version).style(colors.success)
+        );
+        eprintln!();
+
+        match update_check::download_and_install_update(colors, &download_url, &latest_version) {
+            Ok(()) => {
+                std::process::exit(0);
+            }
+            Err(e) => {
+                print_error(colors, &format!("Update failed: {}", e));
+                eprintln!(
+                    "{} {}",
+                    "info:".style(colors.info),
+                    format!("You can manually download from: {}", release_url)
+                );
+                std::process::exit(1);
+            }
+        }
+    } else {
+        eprintln!(
+            "{} {}",
+            "info:".style(colors.info),
+            format!("You are using the latest version ({})", env!("CARGO_PKG_VERSION"))
+        );
+        std::process::exit(0);
+    }
+}
+
+/// Check for updates and display notification if available (non-blocking, silent on failure)
+fn check_and_notify_updates(colors: &Colors) {
+    if let Some((latest_version, release_url, _)) = update_check::check_for_updates() {
+        update_check::display_update_notification(colors, &latest_version, &release_url);
     }
 }
 
