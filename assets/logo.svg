@@ -1,31 +1,78 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
   <defs>
-    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#8b5cf6;stop-opacity:1" />
+    <!-- Shadcn UI semantic color tokens -->
+    <!-- Primary: hsl(221.2 83.2% 53.3%) - blue -->
+    <linearGradient id="primary" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:hsl(221.2 83.2% 53.3%);stop-opacity:1" />
+      <stop offset="100%" style="stop-color:hsl(221.2 83.2% 48%);stop-opacity:1" />
     </linearGradient>
+    <!-- Muted background for dark mode compatibility -->
+    <radialGradient id="bg" cx="50%" cy="50%">
+      <stop offset="0%" style="stop-color:hsl(217.2 32.6% 17.5%);stop-opacity:0.4" />
+      <stop offset="100%" style="stop-color:hsl(217.2 32.6% 12%);stop-opacity:0.6" />
+    </radialGradient>
   </defs>
   
-  <!-- Background circle -->
-  <circle cx="60" cy="60" r="56" fill="url(#grad)" />
+  <!-- Subtle background (dark mode friendly) -->
+  <circle cx="60" cy="60" r="56" fill="url(#bg)" />
   
-  <!-- Question mark -->
-  <text x="60" y="78" 
-        font-family="system-ui, -apple-system, sans-serif" 
-        font-size="60" 
-        font-weight="bold" 
-        fill="white" 
-        text-anchor="middle">?</text>
+  <!-- Process ancestry tree - clean vertical hierarchy -->
+  <!-- Represents: Root → Parent → Child (target process) -->
   
-  <!-- Process tree icon (simplified) -->
-  <g fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round">
-    <line x1="30" y1="95" x2="30" y2="105" />
-    <line x1="30" y1="100" x2="45" y2="100" />
-    <circle cx="48" cy="100" r="3" fill="white" />
-    
-    <line x1="60" y1="95" x2="60" y2="105" />
-    <line x1="60" y1="100" x2="75" y2="100" />
-    <circle cx="78" cy="100" r="3" fill="white" />
+  <!-- Root process (ancestor) - smallest, top -->
+  <circle cx="60" cy="28" r="5" fill="url(#primary)" opacity="0.7" />
+  
+  <!-- Connection line -->
+  <line x1="60" y1="33" x2="60" y2="42" 
+        stroke="hsl(221.2 83.2% 53.3%)" 
+        stroke-width="2" 
+        stroke-linecap="round"
+        opacity="0.5" />
+  
+  <!-- Parent process (middle) -->
+  <circle cx="60" cy="52" r="6.5" fill="url(#primary)" opacity="0.85" />
+  
+  <!-- Connection line -->
+  <line x1="60" y1="58.5" x2="60" y2="68" 
+        stroke="hsl(221.2 83.2% 53.3%)" 
+        stroke-width="2.5" 
+        stroke-linecap="round"
+        opacity="0.6" />
+  
+  <!-- Target process (child) - largest, emphasized -->
+  <circle cx="60" cy="80" r="8" fill="url(#primary)" />
+  <!-- Inner highlight for depth -->
+  <circle cx="60" cy="80" r="4.5" fill="hsl(210 40% 98%)" opacity="0.2" />
+  
+  <!-- System visibility indicator - subtle arc overlay -->
+  <!-- Represents the tool's ability to "see" into system processes -->
+  <path d="M 25 60 A 35 35 0 0 1 95 60" 
+        fill="none" 
+        stroke="hsl(221.2 83.2% 53.3%)" 
+        stroke-width="1.5" 
+        stroke-linecap="round"
+        opacity="0.25" 
+        stroke-dasharray="2.5 3" />
+  
+  <!-- Focus point at center - represents system-level insight -->
+  <circle cx="60" cy="60" r="1.5" fill="hsl(221.2 83.2% 53.3%)" opacity="0.4" />
+  
+  <!-- Subtle side branches - showing alternative process paths -->
+  <!-- Left branch -->
+  <g opacity="0.25">
+    <line x1="45" y1="52" x2="52" y2="52" 
+          stroke="hsl(221.2 83.2% 53.3%)" 
+          stroke-width="1.5" 
+          stroke-linecap="round" />
+    <circle cx="40" cy="52" r="3.5" fill="hsl(221.2 83.2% 53.3%)" opacity="0.5" />
+  </g>
+  
+  <!-- Right branch -->
+  <g opacity="0.25">
+    <line x1="68" y1="52" x2="75" y2="52" 
+          stroke="hsl(221.2 83.2% 53.3%)" 
+          stroke-width="1.5" 
+          stroke-linecap="round" />
+    <circle cx="80" cy="52" r="3.5" fill="hsl(221.2 83.2% 53.3%)" opacity="0.5" />
   </g>
 </svg>
-
