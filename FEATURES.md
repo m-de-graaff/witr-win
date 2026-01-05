@@ -5,7 +5,7 @@ This document outlines potential features and enhancements for witr-win beyond t
 ## 🔍 Process Information Enhancements
 
 ### High Priority
-- **Memory Usage Detection** - Show RSS/working set size, flag processes using >1GB as `[high-mem]`
+- **Memory Usage Detection** - Show RSS/working set size, flag processes using >1GB as `[high-mem]` ✅
   - Use `GetProcessMemoryInfo` or `NtQueryInformationProcess`
   - Add to ProcessInfo model
   - Display in output with warning if high
@@ -14,7 +14,7 @@ This document outlines potential features and enhancements for witr-win beyond t
   - Use WMI `Win32_Process` or `NtQueryInformationProcess` with `ProcessCommandLineInformation`
   - Display truncated if too long (>80 chars)
 
-- **Working Directory** - Show process working directory
+- **Working Directory** - Show process working directory ✅
   - Use `NtQueryInformationProcess` with `ProcessWorkingSetWatch`
   - Or WMI `Win32_Process.ExecutablePath`
 

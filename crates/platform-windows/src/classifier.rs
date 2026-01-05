@@ -675,6 +675,8 @@ mod tests {
                         start_time: None,
                         cmdline: None,
                         session_id: None,
+                        memory_bytes: None,
+                        working_dir: None,
                     },
                     relation,
                     notes: vec![],

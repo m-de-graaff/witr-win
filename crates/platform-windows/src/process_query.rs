@@ -7,17 +7,59 @@ use crate::error::{WinError, WinResult};
 use std::path::PathBuf;
 use time::OffsetDateTime;
 use windows::core::PWSTR;
-use windows::Win32::Foundation::{CloseHandle, HANDLE, LUID};
+use windows::Win32::Foundation::{CloseHandle, HANDLE, LUID, NTSTATUS};
 use windows::Win32::Security::{
     AdjustTokenPrivileges, GetTokenInformation, LookupAccountSidW, LookupPrivilegeValueW,
     TokenUser, SE_DEBUG_NAME, SE_PRIVILEGE_ENABLED, SID_NAME_USE, TOKEN_ADJUST_PRIVILEGES,
     TOKEN_PRIVILEGES, TOKEN_QUERY, TOKEN_USER,
 };
+use windows::Win32::System::Diagnostics::Debug::ReadProcessMemory;
+use windows::Win32::System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS};
 use windows::Win32::System::RemoteDesktop::ProcessIdToSessionId;
 use windows::Win32::System::Threading::{
     GetCurrentProcess, GetProcessTimes, OpenProcess, OpenProcessToken, QueryFullProcessImageNameW,
-    PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+    PROCESS_NAME_WIN32, PROCESS_QUERY_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION,
+    PROCESS_VM_READ,
 };
+
+// FFI for NtQueryInformationProcess (not exposed in windows crate)
+#[link(name = "ntdll")]
+extern "system" {
+    fn NtQueryInformationProcess(
+        ProcessHandle: HANDLE,
+        ProcessInformationClass: u32,
+        ProcessInformation: *mut std::ffi::c_void,
+        ProcessInformationLength: u32,
+        ReturnLength: *mut u32,
+    ) -> NTSTATUS;
+}
+
+const PROCESS_BASIC_INFORMATION_CLASS: u32 = 0;
+
+/// Process Basic Information structure returned by NtQueryInformationProcess
+#[repr(C)]
+struct ProcessBasicInformation {
+    reserved1: *mut std::ffi::c_void,
+    peb_base_address: *mut std::ffi::c_void,
+    reserved2: [*mut std::ffi::c_void; 2],
+    unique_process_id: usize,
+    reserved3: *mut std::ffi::c_void,
+}
+
+/// UNICODE_STRING structure used in PEB
+#[repr(C)]
+struct UnicodeString {
+    length: u16,
+    maximum_length: u16,
+    buffer: *mut u16,
+}
+
+/// CURDIR structure containing the working directory path
+#[repr(C)]
+struct CurDir {
+    dos_path: UnicodeString,
+    handle: HANDLE,
+}
 
 /// RAII wrapper for process/token handles
 struct SafeHandle(HANDLE);
@@ -294,6 +336,180 @@ pub fn get_session_id(pid: u32) -> WinResult<u32> {
         })?;
     }
     Ok(session_id)
+}
+
+/// Get memory usage (working set size) for a process in bytes
+pub fn get_memory_usage(pid: u32) -> WinResult<u64> {
+    unsafe {
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).map_err(|e| {
+            if e.code().0 as u32 == 0x80070005 {
+                WinError::AccessDenied { pid }
+            } else if e.code().0 as u32 == 0x80070057 {
+                WinError::ProcessNotFound { pid }
+            } else {
+                WinError::ApiError {
+                    api: "OpenProcess",
+                    message: e.message().to_string(),
+                }
+            }
+        })?;
+
+        let _handle = SafeHandle::new(handle);
+
+        let mut counters = PROCESS_MEMORY_COUNTERS {
+            cb: std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
+            ..Default::default()
+        };
+
+        GetProcessMemoryInfo(
+            handle,
+            &mut counters,
+            std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
+        )
+        .map_err(|e| WinError::ApiError {
+            api: "GetProcessMemoryInfo",
+            message: e.message().to_string(),
+        })?;
+
+        Ok(counters.WorkingSetSize as u64)
+    }
+}
+
+/// Get the current working directory of a process
+///
+/// This uses NtQueryInformationProcess to read the PEB and extract the
+/// CurrentDirectory from RTL_USER_PROCESS_PARAMETERS.
+pub fn get_working_directory(pid: u32) -> WinResult<String> {
+    unsafe {
+        // Need PROCESS_QUERY_INFORMATION and PROCESS_VM_READ to read process memory
+        let handle =
+            OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid).map_err(|e| {
+                if e.code().0 as u32 == 0x80070005 {
+                    WinError::AccessDenied { pid }
+                } else if e.code().0 as u32 == 0x80070057 {
+                    WinError::ProcessNotFound { pid }
+                } else {
+                    WinError::ApiError {
+                        api: "OpenProcess",
+                        message: e.message().to_string(),
+                    }
+                }
+            })?;
+
+        let _handle = SafeHandle::new(handle);
+
+        // Get the PEB address using NtQueryInformationProcess
+        let mut pbi: ProcessBasicInformation = std::mem::zeroed();
+        let mut return_length: u32 = 0;
+
+        let status = NtQueryInformationProcess(
+            handle,
+            PROCESS_BASIC_INFORMATION_CLASS,
+            &mut pbi as *mut _ as *mut std::ffi::c_void,
+            std::mem::size_of::<ProcessBasicInformation>() as u32,
+            &mut return_length,
+        );
+
+        if status.0 != 0 {
+            return Err(WinError::ApiError {
+                api: "NtQueryInformationProcess",
+                message: format!("NTSTATUS: 0x{:08X}", status.0),
+            });
+        }
+
+        if pbi.peb_base_address.is_null() {
+            return Err(WinError::ApiError {
+                api: "NtQueryInformationProcess",
+                message: "PEB address is null".to_string(),
+            });
+        }
+
+        // Read the ProcessParameters pointer from the PEB
+        // Offset of ProcessParameters in PEB is 0x20 on x64, 0x10 on x86
+        #[cfg(target_pointer_width = "64")]
+        const PROCESS_PARAMETERS_OFFSET: usize = 0x20;
+        #[cfg(target_pointer_width = "32")]
+        const PROCESS_PARAMETERS_OFFSET: usize = 0x10;
+
+        let mut process_parameters_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
+        let mut bytes_read: usize = 0;
+
+        let peb_addr = pbi.peb_base_address as usize;
+        let params_ptr_addr = peb_addr + PROCESS_PARAMETERS_OFFSET;
+
+        ReadProcessMemory(
+            handle,
+            params_ptr_addr as *const std::ffi::c_void,
+            &mut process_parameters_ptr as *mut _ as *mut std::ffi::c_void,
+            std::mem::size_of::<*mut std::ffi::c_void>(),
+            Some(&mut bytes_read),
+        )
+        .map_err(|e| WinError::ApiError {
+            api: "ReadProcessMemory (ProcessParameters ptr)",
+            message: e.message().to_string(),
+        })?;
+
+        if process_parameters_ptr.is_null() {
+            return Err(WinError::ApiError {
+                api: "ReadProcessMemory",
+                message: "ProcessParameters is null".to_string(),
+            });
+        }
+
+        // Read the CurrentDirectory from RTL_USER_PROCESS_PARAMETERS
+        // CurrentDirectory (CURDIR) is at offset 0x38 on x64, 0x24 on x86
+        #[cfg(target_pointer_width = "64")]
+        const CURRENT_DIRECTORY_OFFSET: usize = 0x38;
+        #[cfg(target_pointer_width = "32")]
+        const CURRENT_DIRECTORY_OFFSET: usize = 0x24;
+
+        let curdir_addr = process_parameters_ptr as usize + CURRENT_DIRECTORY_OFFSET;
+        let mut curdir: CurDir = std::mem::zeroed();
+
+        ReadProcessMemory(
+            handle,
+            curdir_addr as *const std::ffi::c_void,
+            &mut curdir as *mut _ as *mut std::ffi::c_void,
+            std::mem::size_of::<CurDir>(),
+            Some(&mut bytes_read),
+        )
+        .map_err(|e| WinError::ApiError {
+            api: "ReadProcessMemory (CurrentDirectory)",
+            message: e.message().to_string(),
+        })?;
+
+        if curdir.dos_path.buffer.is_null() || curdir.dos_path.length == 0 {
+            return Err(WinError::ApiError {
+                api: "ReadProcessMemory",
+                message: "CurrentDirectory buffer is null or empty".to_string(),
+            });
+        }
+
+        // Read the actual path string
+        let path_len = (curdir.dos_path.length / 2) as usize; // length is in bytes, we need chars
+        let mut path_buffer: Vec<u16> = vec![0; path_len];
+
+        ReadProcessMemory(
+            handle,
+            curdir.dos_path.buffer as *const std::ffi::c_void,
+            path_buffer.as_mut_ptr() as *mut std::ffi::c_void,
+            curdir.dos_path.length as usize,
+            Some(&mut bytes_read),
+        )
+        .map_err(|e| WinError::ApiError {
+            api: "ReadProcessMemory (path string)",
+            message: e.message().to_string(),
+        })?;
+
+        // Convert to String, removing trailing backslash if present
+        let mut path = String::from_utf16_lossy(&path_buffer);
+        if path.ends_with('\\') && path.len() > 3 {
+            // Don't remove from "C:\"
+            path.pop();
+        }
+
+        Ok(path)
+    }
 }
 
 #[cfg(test)]

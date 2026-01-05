@@ -230,6 +230,8 @@ mod tests {
                 start_time: None,
                 cmdline: Some("notepad.exe test.txt".to_string()),
                 session_id: Some(1),
+                memory_bytes: None,
+                working_dir: None,
             }),
             ancestry: vec![AncestryNode {
                 process: ProcessInfo {
@@ -240,6 +242,8 @@ mod tests {
                     start_time: None,
                     cmdline: None,
                     session_id: Some(1),
+                    memory_bytes: None,
+                    working_dir: None,
                 },
                 relation: AncestryRelation::Parent,
                 notes: vec![],

@@ -762,6 +762,23 @@ fn format_absolute_time(dt: &time::OffsetDateTime) -> String {
     }
 }
 
+/// Format memory size in human-readable format
+fn format_memory_size(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    const GB: u64 = MB * 1024;
+
+    if bytes >= GB {
+        format!("{:.2} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{} B", bytes)
+    }
+}
+
 /// Print a colored human-readable report
 fn print_colored_report(report: &Report, cli: &Cli, colors: &Colors) {
     let stdout = io::stdout();
@@ -770,8 +787,15 @@ fn print_colored_report(report: &Report, cli: &Cli, colors: &Colors) {
     // Process info - compact format like screenshot
     if let Some(proc) = &report.process {
         // Process name with PID and optional flags
-        let flags: Vec<String> = Vec::new();
-        // TODO: Add memory check for [high-mem] flag
+        let mut flags: Vec<String> = Vec::new();
+
+        // Check for high memory usage (>1GB)
+        const ONE_GB: u64 = 1024 * 1024 * 1024;
+        if let Some(mem) = proc.memory_bytes {
+            if mem > ONE_GB {
+                flags.push("high-mem".to_string());
+            }
+        }
 
         let flags_str = if flags.is_empty() {
             String::new()
@@ -807,6 +831,32 @@ fn print_colored_report(report: &Report, cli: &Cli, colors: &Colors) {
                 "  {}: {}",
                 "Command".style(colors.dim),
                 path.as_str().style(colors.dim)
+            )
+            .ok();
+        }
+
+        // Memory usage
+        if let Some(mem) = proc.memory_bytes {
+            writeln!(
+                out,
+                "  {}: {}",
+                "Memory".style(colors.dim),
+                format_memory_size(mem).style(if mem > ONE_GB {
+                    colors.warning
+                } else {
+                    colors.dim
+                })
+            )
+            .ok();
+        }
+
+        // Working directory
+        if let Some(ref cwd) = proc.working_dir {
+            writeln!(
+                out,
+                "  {}: {}",
+                "Working Dir".style(colors.dim),
+                cwd.style(colors.dim)
             )
             .ok();
         }

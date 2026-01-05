@@ -45,6 +45,10 @@ pub struct ProcessInfo {
     pub cmdline: Option<String>,
     /// Session ID (for terminal services / user sessions)
     pub session_id: Option<u32>,
+    /// Working set size (RSS) in bytes
+    pub memory_bytes: Option<u64>,
+    /// Current working directory of the process
+    pub working_dir: Option<String>,
 }
 
 impl ProcessInfo {

@@ -3,7 +3,10 @@
 //! Builds the chain of parent processes from a target process up to the root.
 
 use crate::error::{WinError, WinResult};
-use crate::process_query::{get_image_path, get_session_id, get_start_time, get_user};
+use crate::process_query::{
+    get_image_path, get_memory_usage, get_session_id, get_start_time, get_user,
+    get_working_directory,
+};
 use crate::process_snapshot::{list_processes, ProcessEntry};
 use std::collections::{HashMap, HashSet};
 use witr_core::{AncestryNode, AncestryRelation, ProcessInfo, Warning};
@@ -23,6 +26,8 @@ pub fn build_process_info(entry: &ProcessEntry) -> ProcessInfo {
     let start_time = get_start_time(entry.pid).ok();
     let user = get_user(entry.pid).ok();
     let session_id = get_session_id(entry.pid).ok();
+    let memory_bytes = get_memory_usage(entry.pid).ok();
+    let working_dir = get_working_directory(entry.pid).ok();
 
     ProcessInfo {
         pid: entry.pid,
@@ -36,6 +41,8 @@ pub fn build_process_info(entry: &ProcessEntry) -> ProcessInfo {
         start_time,
         cmdline: None, // TODO: implement cmdline via WMI or NtQueryInformationProcess
         session_id,
+        memory_bytes,
+        working_dir,
     }
 }
 
@@ -164,6 +171,8 @@ pub fn build_ancestry(
                         start_time: None,
                         cmdline: None,
                         session_id: None,
+                        memory_bytes: None,
+                        working_dir: None,
                     },
                     relation: AncestryRelation::Orphaned,
                     notes: vec!["Process has exited".to_string()],
