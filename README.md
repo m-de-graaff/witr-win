@@ -125,9 +125,9 @@ witr-win --pid 1234
 witr-win notepad.exe
 
 # Different output formats
-witr-win --pid 1234 --output json    # Machine-readable JSON
-witr-win --pid 1234 --output tree    # Ancestry tree view  
-witr-win --pid 1234 --output short   # Single-line summary
+witr-win --pid 1234 --json           # Machine-readable JSON
+witr-win --pid 1234 --tree           # Ancestry tree view  
+witr-win --pid 1234 --short          # Single-line summary
 ```
 
 ## 📖 Why witr-win?

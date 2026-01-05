@@ -1,6 +1,6 @@
-# Contributing to witr
+# Contributing to witr-win
 
-First off, thank you for considering contributing to witr! 🎉
+First off, thank you for considering contributing to witr-win! 🎉
 
 ## Table of Contents
 
@@ -89,7 +89,7 @@ cargo build --release
 1. **Update your fork**:
    ```powershell
    git fetch upstream
-   git rebase upstream/main
+   git rebase upstream/master
    ```
 
 2. **Create a feature branch**:
@@ -104,7 +104,7 @@ cargo build --release
    git push origin feature/your-feature
    ```
 
-5. **Open a Pull Request** against `main`
+5. **Open a Pull Request** against `master`
 
 ### Commit Messages
 
@@ -232,5 +232,5 @@ Out of scope for v1:
 
 ---
 
-Thank you for contributing to witr! 🚀
+Thank you for contributing to witr-win! 🚀
 

@@ -1,6 +1,6 @@
 # Additional Features & Enhancements
 
-This document outlines potential features and enhancements for witr-win beyond the current v0.1.0 release.
+This document outlines potential features and enhancements for witr-win beyond the current v0.2.0 release.
 
 ## 🔍 Process Information Enhancements
 

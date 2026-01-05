@@ -4,11 +4,12 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
+| 0.2.x   | :white_check_mark: |
 | 0.1.x   | :white_check_mark: |
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in witr, please report it responsibly.
+If you discover a security vulnerability in witr-win, please report it responsibly.
 
 ### How to Report
 
