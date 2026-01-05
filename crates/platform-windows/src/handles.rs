@@ -194,11 +194,12 @@ pub fn list_handles(pid: u32) -> WinResult<Vec<HandleInfo>> {
         let handle_info = &*(buffer.as_ptr() as *const SystemHandleInformation);
         let handle_count = handle_info.number_of_handles as usize;
 
-        // Get pointer to the handle array
-        let handle_array = buffer
-            .as_ptr()
-            .add(std::mem::size_of::<SystemHandleInformation>())
-            as *const SystemHandleTableEntryInfo;
+        // Get pointer to the handle array, properly aligned
+        // The array starts after the header, but must be aligned for the entry struct
+        let header_size = std::mem::size_of::<SystemHandleInformation>();
+        let entry_align = std::mem::align_of::<SystemHandleTableEntryInfo>();
+        let array_offset = (header_size + entry_align - 1) & !(entry_align - 1);
+        let handle_array = buffer.as_ptr().add(array_offset) as *const SystemHandleTableEntryInfo;
 
         // Process handles belonging to target PID
         for i in 0..handle_count {
