@@ -93,6 +93,16 @@ jobs:
           Write-Host "VERSION=$version" >> $env:GITHUB_ENV
           Write-Host "Extracted version: $version"
       
+      - name: Update Cargo.toml version
+        run: |
+          $tag = "${{ github.ref }}"
+          $version = $tag -replace 'refs/tags/v', ''
+          $utf8NoBom = New-Object System.Text.UTF8Encoding $false
+          $cargoToml = [System.IO.File]::ReadAllText("Cargo.toml", $utf8NoBom)
+          $cargoToml = $cargoToml -replace 'version = "[^"]+"', "version = `"$version`""
+          [System.IO.File]::WriteAllText("Cargo.toml", $cargoToml, $utf8NoBom)
+          Write-Host "Updated Cargo.toml version to $version"
+      
       - name: Build release
         run: cargo build --release
       
