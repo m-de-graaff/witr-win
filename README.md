@@ -88,11 +88,25 @@ Why It Exists :
 - 🌐 **Network connections** (`--net`) - All TCP/UDP connections with state (ESTABLISHED, LISTEN, etc.)
 - ⚠️ **Smart warnings** - Alerts for high memory, public listeners, long uptime
 
+### Security & Compliance
+- 🛡️ **Integrity level** - Show process integrity (Low, Medium, High, System)
+- 🔑 **Privilege detection** - Show enabled privileges with dangerous privilege warnings
+- 🔐 **Security analysis** (`--security`) - Combined integrity and privilege view
+
 ### Output & UX
 - 🎨 **Pretty tables** - Aligned output with Unicode tables for modules/handles
 - 🔄 **Auto-update** - Built-in update checker and installer (`--update`)
 - 📋 **JSON export** - Machine-readable output for scripting
 - 🌳 **Tree view** - Visual ancestry tree
+- 🖥️ **Interactive mode** (`--interactive`) - TUI with search, sort, and filter
+- 📊 **Dependency graph** (`--graph`) - DOT/Graphviz output for visualization
+- 📸 **Snapshots** - Save and compare process state over time
+
+### Quality of Life
+- ⚡ **Aliases** - Short flags: `-p` for `--pid`, `-P` for `--port`, `-a` for `--all`
+- ⚙️ **Config file** - `~/.witr-win/config.toml` for persistent defaults
+- 🔢 **Exit codes** - Proper exit codes for scripting (0=success, 2=not found, etc.)
+- 💬 **Better errors** - Actionable error messages with examples
 
 ## 🚀 Quick Start
 
@@ -164,10 +178,25 @@ witr-win --pid 1234 --short          # Single-line summary
 witr-win --pid 1234 --modules        # Show loaded DLLs
 witr-win --pid 1234 --handles        # Show open handles
 witr-win --pid 1234 --perf           # Show CPU/IO stats
+witr-win --pid 1234 --net            # Show network connections
+witr-win --pid 1234 --security       # Show integrity level & privileges
 witr-win --pid 1234 -v               # Verbose output
+witr-win --pid 1234 --all            # All analysis (modules, handles, perf, net, verbose)
 
-# Combine flags
-witr-win --pid 1234 --modules --handles --perf -v
+# Interactive mode - TUI with search and filtering
+witr-win --interactive
+witr-win -i
+
+# Dependency graph (DOT format for Graphviz)
+witr-win --pid 1234 --graph | dot -Tpng -o process.png
+
+# Snapshots - save and compare process state
+witr-win --pid 1234 --snapshot myapp         # Save current state
+witr-win --pid 1234 --compare myapp          # Compare with saved snapshot
+witr-win --list-snapshots                    # List all saved snapshots
+
+# Configuration
+witr-win --init-config               # Generate ~/.witr-win/config.toml
 
 # Updates
 witr-win --check-update              # Check for updates
@@ -181,6 +210,7 @@ witr-win --update                    # Download and install update
 | `--pid <PID>` | `-p` | Analyze process by PID |
 | `--port <PORT>` | `-P` | Find process listening on port |
 | `<NAME>` | | Search for process by name |
+| `--all` | `-a` | Enable all analysis flags (modules, handles, perf, net, verbose) |
 | `--json` | `-j` | Output as JSON |
 | `--short` | `-s` | Single-line summary |
 | `--tree` | `-t` | Show ancestry tree |
@@ -188,8 +218,15 @@ witr-win --update                    # Download and install update
 | `--handles` | `-H` | Show open handles |
 | `--perf` | | Show performance metrics |
 | `--net` | `-n` | Show network connections |
+| `--security` | `-S` | Show security info (integrity level, privileges) |
+| `--graph` | | Output ancestry as DOT graph (for Graphviz) |
+| `--interactive` | `-i` | Launch interactive TUI mode |
+| `--snapshot <NAME>` | | Save process snapshot with given name |
+| `--compare <NAME>` | | Compare current state with saved snapshot |
+| `--list-snapshots` | | List all saved snapshots |
 | `--verbose` | `-v` | Verbose output |
 | `--no-color` | | Disable colored output |
+| `--init-config` | | Generate sample config file |
 | `--check-update` | | Check for updates |
 | `--update` | | Download and install update |
 | `--help` | `-h` | Show help |
@@ -378,6 +415,91 @@ $ witr-win --pid 12456 --short
 node.exe (12456) ← WindowsTerminal.exe ← explorer.exe [Interactive Session]
 ```
 
+### Security Analysis (`--security`)
+```
+$ witr-win --pid 1234 --security
+
+     Process : mysqld.exe (pid 1234)
+        ...
+
+    Security :
+               Integrity Level: High
+
+               Enabled Privileges:
+                 ⚠ SeDebugPrivilege
+                 ⚠ SeImpersonatePrivilege
+                   SeChangeNotifyPrivilege
+                   SeIncreaseWorkingSetPrivilege
+```
+
+### Interactive Mode (`--interactive`)
+```
+$ witr-win --interactive
+
+┌────────────────────────────────────────────────────────────────────────────┐
+│ witr-win Interactive Mode │ 247 processes │ ↑↓:Navigate  /:Search  q:Quit │
+├────────────────────────────────────────────────────────────────────────────┤
+│ PID ▲    │ Name                    │ Threads │ Parent   │
+├──────────┼─────────────────────────┼─────────┼──────────┤
+│ ▶    4   │ System                  │     189 │        0 │
+│      156 │ Registry                │       4 │        4 │
+│      512 │ smss.exe                │       2 │        4 │
+│      684 │ csrss.exe               │      12 │      632 │
+│      ...                                                 │
+├────────────────────────────────────────────────────────────────────────────┤
+│ Press '/' to search, Enter to analyze, 'q' to quit                        │
+└────────────────────────────────────────────────────────────────────────────┘
+```
+
+### Dependency Graph (`--graph`)
+```
+$ witr-win --pid 12456 --graph
+
+digraph process_ancestry {
+    rankdir=BT;
+    node [shape=box, style=rounded];
+
+    p12456 [label="node.exe\n(12456)", style="rounded,filled", fillcolor="#90EE90"];
+    p8892 [label="pwsh.exe\n(8892)"];
+    p4420 [label="WindowsTerminal.exe\n(4420)"];
+    p3156 [label="explorer.exe\n(3156)"];
+    source [label="Interactive Session", shape=ellipse, style=dashed];
+
+    p12456 -> p8892;
+    p8892 -> p4420;
+    p4420 -> p3156;
+    p3156 -> source [style=dashed];
+}
+
+# Render with Graphviz:
+$ witr-win --pid 12456 --graph | dot -Tpng -o ancestry.png
+```
+
+### Snapshots (Historical Analysis)
+```
+# Save a snapshot of the current process state
+$ witr-win --pid 1234 --snapshot myapp
+info: Snapshot 'myapp' saved successfully
+
+# Later, compare current state with the snapshot
+$ witr-win --pid 1234 --compare myapp
+info: Comparing with snapshot: myapp (saved 2 hours ago)
+
+  Property      │ Snapshot         │ Current
+  ──────────────┼──────────────────┼──────────────
+  Memory        │ 128.5 MB         │ 256.2 MB      ⚠ +127.7 MB
+  Threads       │ 12               │ 18            ⚠ +6
+  Connections   │ 3                │ 8             ⚠ +5
+
+# List all saved snapshots
+$ witr-win --list-snapshots
+info: Saved snapshots:
+
+  myapp           2 hours ago
+  production_db   3 days ago
+  test_server     1 week ago
+```
+
 ### Multi-Process Search
 ```
 $ witr-win chrome
@@ -469,6 +591,8 @@ witr-win uses native Windows APIs to gather information:
 | CPU/IO stats | `GetProcessTimes` + `GetProcessIoCounters` |
 | Network connections | `GetExtendedTcpTable`, `GetExtendedUdpTable` (all states) |
 | Thread count | `CreateToolhelp32Snapshot` (process entry) |
+| Integrity level | `GetTokenInformation` (TokenIntegrityLevel) |
+| Privileges | `GetTokenInformation` (TokenPrivileges) + `LookupPrivilegeName` |
 
 ### Admin vs Non-Admin
 

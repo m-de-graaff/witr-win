@@ -186,13 +186,17 @@ crates/
 │   ├── classifier.rs      # Source classification (Service/Task/Interactive)
 │   ├── error.rs           # Error types (WinError, WinResult)
 │   ├── handles.rs         # Open handle enumeration (files, registry, etc.)
-│   ├── net.rs             # Network APIs (port → PID)
+│   ├── net.rs             # Network APIs (port → PID, connections)
 │   ├── perf.rs            # Performance metrics (CPU, I/O stats)
 │   ├── process_query.rs   # Detailed process info (memory, user, etc.)
 │   ├── process_snapshot.rs # Process/module listing
+│   ├── security.rs        # Security info (integrity level, privileges)
 │   └── services.rs        # Windows service detection
 └── cli/                   # CLI application
-    └── main.rs            # Entry point, argument parsing, output formatting
+    ├── main.rs            # Entry point, argument parsing, output formatting
+    ├── config.rs          # Configuration file support
+    ├── snapshot.rs        # Process state snapshots
+    └── tui.rs             # Interactive TUI mode
 ```
 
 ### Adding Windows API Calls
@@ -251,17 +255,27 @@ Currently implemented:
 - Service/Task/Interactive classification
 - JSON/text/tree/short output formats
 - Memory usage & process tree totals
+- Command line arguments & environment variables
+- Thread count display
 - Loaded modules listing (`--modules`)
 - Open handles enumeration (`--handles`)
 - Performance metrics (`--perf`)
+- Network connections - all TCP/UDP with states (`--net`)
+- Security analysis - integrity levels & privileges (`--security`)
+- Interactive TUI mode (`--interactive`)
+- Dependency graph output (`--graph`)
+- Process snapshots & comparison (`--snapshot`, `--compare`)
+- Config file support (`~/.witr-win/config.toml`)
 - Auto-update functionality
 - Pretty aligned output with Unicode tables
+- Short aliases (`-p`, `-P`, `-a`, `-i`, `-S`)
+- Proper exit codes for scripting
 
 Planned features (see FEATURES.md):
 - Watch mode (real-time monitoring)
-- Network connections (all states)
 - Container detection (Docker, WSL)
-- Interactive TUI mode
+- ASLR/DEP status
+- Digital signature verification
 
 Out of scope:
 - Kernel driver integration
