@@ -632,6 +632,7 @@ mod tests {
         }
 
         /// Create fake ancestry for testing
+        #[allow(dead_code)] // Helper function for potential future tests
         fn create_fake_ancestry(pid: u32, table: &HashMap<u32, ProcessEntry>) -> Vec<AncestryNode> {
             let mut ancestry = Vec::new();
             let mut current = pid;
@@ -689,7 +690,7 @@ mod tests {
         #[test]
         fn test_classify_with_fake_service() {
             let table = create_fake_process_table();
-            let mut ctx = ClassificationContext {
+            let ctx = ClassificationContext {
                 pid: 200, // svchost.exe
                 process_table: table,
                 service_map: {
@@ -753,10 +754,11 @@ mod tests {
         #[test]
         fn test_classify_with_fake_system() {
             let table = create_fake_process_table();
-            // System PID (4) should be <= 4
-            assert!(4 <= 4);
             // Verify system process exists in table
             assert!(table.contains_key(&4));
+            // Verify it's a system PID (<= 4)
+            let system_entry = table.get(&4).unwrap();
+            assert!(system_entry.pid <= 4);
         }
     }
 

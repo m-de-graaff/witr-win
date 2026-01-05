@@ -670,11 +670,11 @@ fn format_warning(warning: &Warning) -> String {
         Warning::Other(msg) => {
             // Format common warning patterns to match screenshot style
             if msg.contains("high memory") || msg.contains(">1GB") {
-                format!("Process is using high memory (>1GB RSS)")
+                "Process is using high memory (>1GB RSS)".to_string()
             } else if msg.contains("listening on all interfaces") || msg.contains("0.0.0.0") {
-                format!("Process is listening on a public interface")
+                "Process is listening on a public interface".to_string()
             } else if msg.contains("over 90 days") || msg.contains("running for") {
-                format!("Process has been running for over 90 days")
+                "Process has been running for over 90 days".to_string()
             } else {
                 msg.clone()
             }
