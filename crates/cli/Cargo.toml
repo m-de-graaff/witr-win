@@ -1,0 +1,15 @@
+[package]
+name = "witr"
+description = "Windows-native CLI tool that explains why a process exists"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "witr"
+path = "src/main.rs"
+
+[dependencies]
+witr-core.workspace = true
+witr-platform-windows.workspace = true
+clap = { version = "4.5", features = ["derive"] }

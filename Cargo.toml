@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/platform-windows",
+    "crates/cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Mark de Graaff"]
+license = "MIT"
+repository = "https://github.com/mark-de-graaff/witr-win"
+
+[workspace.dependencies]
+witr-core = { path = "crates/core" }
+witr-platform-windows = { path = "crates/platform-windows" }
