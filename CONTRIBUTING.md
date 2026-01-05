@@ -20,9 +20,9 @@ This project adheres to the [Contributor Covenant Code of Conduct](CODE_OF_CONDU
 
 ### Prerequisites
 
-- **Windows 10/11** — witr-win is Windows-native
-- **Rust stable** (MSVC toolchain) — Install from [rustup.rs](https://rustup.rs)
-- **Git** — For version control
+- **Windows 10/11** - witr-win is Windows-native
+- **Rust stable** (MSVC toolchain) - Install from [rustup.rs](https://rustup.rs)
+- **Git** - For version control
 
 ### Setting Up Your Development Environment
 
@@ -53,16 +53,16 @@ This project adheres to the [Contributor Covenant Code of Conduct](CODE_OF_CONDU
 
 ### Branch Naming
 
-- `feature/short-description` — New features
-- `fix/issue-number-description` — Bug fixes
-- `docs/what-changed` — Documentation updates
-- `refactor/what-changed` — Code refactoring
+- `feature/short-description` - New features
+- `fix/issue-number-description` - Bug fixes
+- `docs/what-changed` - Documentation updates
+- `refactor/what-changed` - Code refactoring
 
 ### Before You Start Coding
 
-1. **Check existing issues** — Someone may already be working on it
-2. **Create or claim an issue** — Discuss your approach before diving in
-3. **Keep changes focused** — One feature/fix per PR
+1. **Check existing issues** - Someone may already be working on it
+2. **Create or claim an issue** - Discuss your approach before diving in
+3. **Keep changes focused** - One feature/fix per PR
 
 ### Running Checks Locally
 
@@ -138,13 +138,13 @@ Follow the [Conventional Commits](https://www.conventionalcommits.org/) specific
 ```
 
 **Types:**
-- `feat` — New feature
-- `fix` — Bug fix
-- `docs` — Documentation only
-- `style` — Formatting, no code change
-- `refactor` — Code change that neither fixes a bug nor adds a feature
-- `test` — Adding or updating tests
-- `chore` — Maintenance tasks
+- `feat` - New feature
+- `fix` - Bug fix
+- `docs` - Documentation only
+- `style` - Formatting, no code change
+- `refactor` - Code change that neither fixes a bug nor adds a feature
+- `test` - Adding or updating tests
+- `chore` - Maintenance tasks
 
 **Examples:**
 ```
@@ -166,8 +166,8 @@ docs(readme): add installation instructions for winget
 
 ### Rust Style
 
-- Follow `rustfmt` defaults — run `cargo fmt` before committing
-- Follow `clippy` recommendations — run `cargo clippy -- -D warnings`
+- Follow `rustfmt` defaults - run `cargo fmt` before committing
+- Follow `clippy` recommendations - run `cargo clippy -- -D warnings`
 - Write documentation for public APIs
 - Prefer explicit types in function signatures
 - Use meaningful variable names
@@ -211,29 +211,29 @@ When adding new Windows API functionality:
 
 ### Before Submitting
 
-1. **Check existing issues** — It may already be reported
-2. **Try the latest version** — The bug may be fixed
-3. **Gather information** — OS version, Rust version, steps to reproduce
+1. **Check existing issues** - It may already be reported
+2. **Try the latest version** - The bug may be fixed
+3. **Gather information** - OS version, Rust version, steps to reproduce
 
 ### Bug Report Template
 
 Use the issue template, or include:
 
-- **Summary** — Brief description
-- **Environment** — Windows version, Rust version
-- **Steps to Reproduce** — Minimal steps to trigger the bug
-- **Expected Behavior** — What should happen
-- **Actual Behavior** — What actually happens
-- **Additional Context** — Logs, screenshots, etc.
+- **Summary** - Brief description
+- **Environment** - Windows version, Rust version
+- **Steps to Reproduce** - Minimal steps to trigger the bug
+- **Expected Behavior** - What should happen
+- **Actual Behavior** - What actually happens
+- **Additional Context** - Logs, screenshots, etc.
 
 ## Suggesting Features
 
 ### Feature Request Process
 
-1. **Search existing issues** — It may already be suggested
+1. **Search existing issues** - It may already be suggested
 2. **Open a new issue** using the feature request template
-3. **Describe the use case** — Why is this feature needed?
-4. **Propose a solution** — How might it work?
+3. **Describe the use case** - Why is this feature needed?
+4. **Propose a solution** - How might it work?
 
 ### Feature Scope (v1)
 

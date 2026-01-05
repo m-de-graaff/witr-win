@@ -1,14 +1,14 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
   <metadata>
     <id>witr-win</id>
-    <version>0.2.1</version>
+    <version>0.3.14</version>
     <title>witr-win</title>
     <authors>Mark de Graaff</authors>
     <owners>m-de-graaff</owners>
     <projectUrl>https://github.com/m-de-graaff/witr-win</projectUrl>
     <description>Windows-native CLI tool that explains why a process exists by building a causal chain of process ancestry and system signals.</description>
-    <summary>Why Is This Running? — Windows Edition. A CLI tool that explains why a process exists.</summary>
+    <summary>Why Is This Running? - Windows Edition. A CLI tool that explains why a process exists.</summary>
     <releaseNotes>https://github.com/m-de-graaff/witr-win/releases</releaseNotes>
     <copyright>Copyright © 2024 Mark de Graaff</copyright>
     <licenseUrl>https://github.com/m-de-graaff/witr-win/blob/main/LICENSE</licenseUrl>
@@ -23,4 +23,3 @@
     <file src="tools\**" target="tools" />
   </files>
 </package>
-

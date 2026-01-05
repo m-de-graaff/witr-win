@@ -1,20 +1,19 @@
 {
-  "version": "0.2.1",
-  "description": "Windows-native CLI tool that explains why a process exists",
-  "homepage": "https://github.com/m-de-graaff/witr-win",
-  "license": "MIT",
-  "url": "https://github.com/m-de-graaff/witr-win/releases/download/v0.2.1/witr-win.exe",
-  "hash": "",
-  "bin": "witr-win.exe",
-  "checkver": {
-    "github": "https://github.com/m-de-graaff/witr-win",
-    "regex": "tag/v([\\d.]+)"
-  },
-  "autoupdate": {
-    "url": "https://github.com/m-de-graaff/witr-win/releases/download/v$version/witr-win.exe",
-    "hash": {
-      "url": "$baseurl/witr-win.exe.sha256"
-    }
-  }
+    "version":  "0.3.14",
+    "description":  "Windows-native CLI tool that explains why a process exists",
+    "homepage":  "https://github.com/m-de-graaff/witr-win",
+    "license":  "MIT",
+    "url":  "https://github.com/m-de-graaff/witr-win/releases/download/v0.3.14/witr-win.exe",
+    "hash":  "sha256:",
+    "bin":  "witr-win.exe",
+    "checkver":  {
+                     "github":  "https://github.com/m-de-graaff/witr-win",
+                     "regex":  "tag/v([\\d.]+)"
+                 },
+    "autoupdate":  {
+                       "url":  "https://github.com/m-de-graaff/witr-win/releases/download/v$version/witr-win.exe",
+                       "hash":  {
+                                    "url":  "$baseurl/witr-win.exe.sha256"
+                                }
+                   }
 }
-

@@ -5,12 +5,12 @@
 <h1 align="center">witr-win</h1>
 
 <p align="center">
-  <strong>Why Is This Running? — Windows Edition</strong><br>
+  <strong>Why Is This Running? - Windows Edition</strong><br>
   A Windows-native CLI tool that explains why a process exists.
 </p>
 
 <p align="center">
-  <em>Inspired by <a href="https://github.com/pranshuparmar/witr">witr</a> — bringing the same power to Windows</em>
+  <em>Inspired by <a href="https://github.com/pranshuparmar/witr">witr</a> - bringing the same power to Windows</em>
 </p>
 
 <p align="center">
@@ -40,7 +40,7 @@ Ever wondered *"What started this process?"* or *"Why is something listening on 
 
 **witr-win** is the Windows-native port of [witr](https://github.com/pranshuparmar/witr) ("Why Is This Running?"). While the original witr supports Linux and macOS, **witr-win** brings the same functionality to Windows using native Win32 APIs.
 
-It answers these questions by building a **causal chain** — tracing a process back through its ancestry to identify whether it came from a Windows Service, a Scheduled Task, an interactive user session, or something else entirely.
+It answers these questions by building a **causal chain** - tracing a process back through its ancestry to identify whether it came from a Windows Service, a Scheduled Task, an interactive user session, or something else entirely.
 
 ```
 $ witr-win --port 5000
@@ -64,12 +64,12 @@ Ancestry:
 
 ## ✨ Features
 
-- 🔍 **Multiple input modes** — Query by PID, port number, or process name
-- 🌳 **Ancestry chain** — See the full parent→grandparent→root chain  
-- 🏷️ **Source classification** — Identifies Services, Scheduled Tasks, Interactive sessions
-- 📊 **Multiple output formats** — Human-readable, JSON, tree view, or one-liner
-- 🔒 **Graceful degradation** — Works without admin (with reduced detail)
-- ⚡ **Fast & native** — Pure Rust, no runtime dependencies
+- 🔍 **Multiple input modes** - Query by PID, port number, or process name
+- 🌳 **Ancestry chain** - See the full parent→grandparent→root chain  
+- 🏷️ **Source classification** - Identifies Services, Scheduled Tasks, Interactive sessions
+- 📊 **Multiple output formats** - Human-readable, JSON, tree view, or one-liner
+- 🔒 **Graceful degradation** - Works without admin (with reduced detail)
+- ⚡ **Fast & native** - Pure Rust, no runtime dependencies
 
 ## 🚀 Quick Start
 
@@ -115,13 +115,13 @@ cargo build --release
 ### Usage
 
 ```powershell
-# Query by port — "What's listening on port 5000?"
+# Query by port - "What's listening on port 5000?"
 witr-win --port 5000
 
-# Query by PID — "What started process 1234?"
+# Query by PID - "What started process 1234?"
 witr-win --pid 1234
 
-# Query by name — "What's running notepad?"
+# Query by name - "What's running notepad?"
 witr-win notepad.exe
 
 # Different output formats
@@ -134,7 +134,7 @@ witr-win --pid 1234 --short          # Single-line summary
 
 ### The Problem
 
-The excellent [witr](https://github.com/pranshuparmar/witr) project answers "Why is this running?" on Linux and macOS — but Windows users were left out. On Windows, understanding *why* a process is running is surprisingly difficult:
+The excellent [witr](https://github.com/pranshuparmar/witr) project answers "Why is this running?" on Linux and macOS - but Windows users were left out. On Windows, understanding *why* a process is running is surprisingly difficult:
 
 - Task Manager shows processes but not their origin
 - `netstat` shows ports but requires manual PID lookup
@@ -182,7 +182,7 @@ witr-win uses native Windows APIs to gather information:
 | **Language** | Go | Rust |
 | **Process info** | `/proc`, `ps`, `lsof` | Win32 APIs |
 | **Service detection** | systemd, launchd | Windows Services, Task Scheduler |
-| **Container support** | Docker, Podman | — (planned) |
+| **Container support** | Docker, Podman | - (planned) |
 | **Install methods** | brew, go install, nix | GitHub releases, cargo |
 
 > 💡 **Use the right tool for your platform:** [witr](https://github.com/pranshuparmar/witr) for Linux/macOS, witr-win for Windows.
@@ -231,11 +231,11 @@ cargo fmt --check
 
 ## 📜 License
 
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## 🙏 Acknowledgments
 
-- **[witr](https://github.com/pranshuparmar/witr)** by [@pranshuparmar](https://github.com/pranshuparmar) — the original "Why Is This Running?" for Linux/macOS that inspired this Windows port
+- **[witr](https://github.com/pranshuparmar/witr)** by [@pranshuparmar](https://github.com/pranshuparmar) - the original "Why Is This Running?" for Linux/macOS that inspired this Windows port
 - Inspired by tools like `lsof`, `ss`, and Process Explorer
 - Built with the excellent [windows-rs](https://github.com/microsoft/windows-rs) crate
 - CLI powered by [clap](https://github.com/clap-rs/clap)
