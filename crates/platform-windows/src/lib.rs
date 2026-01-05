@@ -4,7 +4,11 @@
 //! including process enumeration, port mapping, service detection, and more.
 
 #[cfg(windows)]
+pub mod analyzer;
+#[cfg(windows)]
 pub mod ancestry;
+#[cfg(windows)]
+pub mod classifier;
 #[cfg(windows)]
 pub mod error;
 #[cfg(windows)]
@@ -13,9 +17,15 @@ pub mod net;
 pub mod process_query;
 #[cfg(windows)]
 pub mod process_snapshot;
+#[cfg(windows)]
+pub mod services;
 
 #[cfg(windows)]
+pub use analyzer::*;
+#[cfg(windows)]
 pub use ancestry::*;
+#[cfg(windows)]
+pub use classifier::*;
 #[cfg(windows)]
 pub use error::*;
 #[cfg(windows)]
@@ -24,6 +34,8 @@ pub use net::*;
 pub use process_query::*;
 #[cfg(windows)]
 pub use process_snapshot::*;
+#[cfg(windows)]
+pub use services::*;
 
 // Stub for non-Windows platforms (for cross-compilation/testing)
 #[cfg(not(windows))]

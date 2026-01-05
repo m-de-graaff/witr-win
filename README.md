@@ -1,12 +1,16 @@
 <p align="center">
-  <img src="assets/logo.svg" alt="witr logo" width="120" height="120">
+  <img src="assets/logo.svg" alt="witr-win logo" width="120" height="120">
 </p>
 
-<h1 align="center">witr</h1>
+<h1 align="center">witr-win</h1>
 
 <p align="center">
-  <strong>Why Is This Running?</strong><br>
+  <strong>Why Is This Running? — Windows Edition</strong><br>
   A Windows-native CLI tool that explains why a process exists.
+</p>
+
+<p align="center">
+  <em>Inspired by <a href="https://github.com/pranshuparmar/witr">witr</a> — bringing the same power to Windows</em>
 </p>
 
 <p align="center">
@@ -25,19 +29,21 @@
 </p>
 
 <p align="center">
-  <img src="assets/demo.gif" alt="witr demo" width="700">
+  <img src="assets/demo.gif" alt="witr-win demo" width="700">
 </p>
 
 ---
 
-## 🎯 What is witr?
+## 🎯 What is witr-win?
 
 Ever wondered *"What started this process?"* or *"Why is something listening on port 5000?"*
 
-**witr** answers these questions by building a **causal chain** — tracing a process back through its ancestry to identify whether it came from a Windows Service, a Scheduled Task, an interactive user session, or something else entirely.
+**witr-win** is the Windows-native port of [witr](https://github.com/pranshuparmar/witr) ("Why Is This Running?"). While the original witr supports Linux and macOS, **witr-win** brings the same functionality to Windows using native Win32 APIs.
+
+It answers these questions by building a **causal chain** — tracing a process back through its ancestry to identify whether it came from a Windows Service, a Scheduled Task, an interactive user session, or something else entirely.
 
 ```
-$ witr --port 5000
+$ witr-win --port 5000
 
 ─── Query: port 5000 ───
 
@@ -78,6 +84,16 @@ Download the latest release from the [Releases page](https://github.com/m-de-gra
 Invoke-WebRequest -Uri "https://github.com/m-de-graaff/witr-win/releases/latest/download/witr-x86_64-pc-windows-msvc.zip" -OutFile witr.zip
 Expand-Archive witr.zip -DestinationPath "$env:LOCALAPPDATA\Programs\witr"
 
+# Verify checksum (optional but recommended)
+Invoke-WebRequest -Uri "https://github.com/m-de-graaff/witr-win/releases/latest/download/witr-x86_64-pc-windows-msvc.zip.sha256" -OutFile witr.zip.sha256
+$expectedHash = (Get-Content witr.zip.sha256).Split(' ')[0]
+$actualHash = (Get-FileHash -Path witr.zip -Algorithm SHA256).Hash
+if ($expectedHash -eq $actualHash) {
+    Write-Host "Checksum verified successfully"
+} else {
+    Write-Error "Checksum verification failed!"
+}
+
 # Add to PATH (run in elevated PowerShell)
 $path = [Environment]::GetEnvironmentVariable("PATH", "User")
 [Environment]::SetEnvironmentVariable("PATH", "$path;$env:LOCALAPPDATA\Programs\witr", "User")
@@ -93,32 +109,32 @@ cd witr-win
 # Build release binary
 cargo build --release
 
-# The binary will be at target\release\witr.exe
+# The binary will be at target\release\witr-win.exe
 ```
 
 ### Usage
 
 ```powershell
 # Query by port — "What's listening on port 5000?"
-witr --port 5000
+witr-win --port 5000
 
 # Query by PID — "What started process 1234?"
-witr --pid 1234
+witr-win --pid 1234
 
 # Query by name — "What's running notepad?"
-witr notepad.exe
+witr-win notepad.exe
 
 # Different output formats
-witr --pid 1234 --output json    # Machine-readable JSON
-witr --pid 1234 --output tree    # Ancestry tree view  
-witr --pid 1234 --output short   # Single-line summary
+witr-win --pid 1234 --output json    # Machine-readable JSON
+witr-win --pid 1234 --output tree    # Ancestry tree view  
+witr-win --pid 1234 --output short   # Single-line summary
 ```
 
-## 📖 Why witr?
+## 📖 Why witr-win?
 
 ### The Problem
 
-On Windows, understanding *why* a process is running is surprisingly difficult:
+The excellent [witr](https://github.com/pranshuparmar/witr) project answers "Why is this running?" on Linux and macOS — but Windows users were left out. On Windows, understanding *why* a process is running is surprisingly difficult:
 
 - Task Manager shows processes but not their origin
 - `netstat` shows ports but requires manual PID lookup
@@ -127,7 +143,7 @@ On Windows, understanding *why* a process is running is surprisingly difficult:
 
 ### The Solution
 
-**witr** provides a single command that:
+**witr-win** provides a single command that:
 
 1. Resolves your query (port → PID, name → PID)
 2. Gathers process metadata (path, user, start time)
@@ -137,7 +153,7 @@ On Windows, understanding *why* a process is running is surprisingly difficult:
 
 ## 🔧 How It Works
 
-witr uses native Windows APIs to gather information:
+witr-win uses native Windows APIs to gather information:
 
 | Data | API |
 |------|-----|
@@ -157,6 +173,19 @@ witr uses native Windows APIs to gather information:
 | Own processes | ✅ Full detail | ✅ Full detail |
 | Other user processes | ⚠️ Limited | ✅ Full detail |
 | System processes | ⚠️ Limited | ✅ Full detail |
+
+## 🔄 witr vs witr-win
+
+| Feature | [witr](https://github.com/pranshuparmar/witr) | witr-win |
+|---------|------|----------|
+| **Platform** | Linux, macOS | Windows |
+| **Language** | Go | Rust |
+| **Process info** | `/proc`, `ps`, `lsof` | Win32 APIs |
+| **Service detection** | systemd, launchd | Windows Services, Task Scheduler |
+| **Container support** | Docker, Podman | — (planned) |
+| **Install methods** | brew, go install, nix | GitHub releases, cargo |
+
+> 💡 **Use the right tool for your platform:** [witr](https://github.com/pranshuparmar/witr) for Linux/macOS, witr-win for Windows.
 
 ## 📦 Project Structure
 
@@ -201,6 +230,7 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 
 ## 🙏 Acknowledgments
 
+- **[witr](https://github.com/pranshuparmar/witr)** by [@pranshuparmar](https://github.com/pranshuparmar) — the original "Why Is This Running?" for Linux/macOS that inspired this Windows port
 - Inspired by tools like `lsof`, `ss`, and Process Explorer
 - Built with the excellent [windows-rs](https://github.com/microsoft/windows-rs) crate
 - CLI powered by [clap](https://github.com/clap-rs/clap)

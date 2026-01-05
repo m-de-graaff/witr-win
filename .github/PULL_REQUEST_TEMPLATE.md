@@ -34,8 +34,8 @@ Fixes #
 <!-- If applicable, add screenshots or command output -->
 
 ```
-$ witr --version
-witr 0.1.0
+$ witr-win --version
+witr-win 0.1.0
 ```
 
 ## Additional Notes

@@ -23,7 +23,7 @@ body:
       label: Steps to Reproduce
       description: Steps to reproduce the behavior.
       placeholder: |
-        1. Run `witr --port 5000`
+        1. Run `witr-win --port 5000`
         2. See error...
     validations:
       required: true
@@ -47,9 +47,9 @@ body:
   - type: input
     id: version
     attributes:
-      label: witr Version
-      description: Output of `witr --version`
-      placeholder: "witr 0.1.0"
+      label: witr-win Version
+      description: Output of `witr-win --version`
+      placeholder: "witr-win 0.1.0"
     validations:
       required: true
 

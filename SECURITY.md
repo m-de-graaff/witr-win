@@ -45,7 +45,7 @@ Out of scope:
 
 ### Process Information Access
 
-witr accesses Windows process information. By design:
+witr-win accesses Windows process information. By design:
 
 - It can see all processes visible to the current user
 - With admin privileges, it can see all system processes
@@ -56,7 +56,7 @@ witr accesses Windows process information. By design:
 
 When run as Administrator:
 
-- witr gains access to more process details
+- witr-win gains access to more process details
 - It can query information about system processes
 - No special permissions are retained after exit
 

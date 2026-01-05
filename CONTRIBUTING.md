@@ -20,7 +20,7 @@ This project adheres to the [Contributor Covenant Code of Conduct](CODE_OF_CONDU
 
 ### Prerequisites
 
-- **Windows 10/11** — witr is Windows-native
+- **Windows 10/11** — witr-win is Windows-native
 - **Rust stable** (MSVC toolchain) — Install from [rustup.rs](https://rustup.rs)
 - **Git** — For version control
 
