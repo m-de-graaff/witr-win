@@ -28,6 +28,9 @@
   </a>
 </p>
 
+<img width="1564" height="751" alt="image" src="https://github.com/user-attachments/assets/c8140678-32f7-4520-9983-a511345c2e2f" />
+
+
 ---
 
 ## 🎯 What is witr-win?
