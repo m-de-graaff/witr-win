@@ -71,21 +71,24 @@ const SECURITY_MANDATORY_PROTECTED_PROCESS_RID: u32 = 0x5000;
 /// Get the integrity level of a process
 pub fn get_integrity_level(pid: u32) -> WinResult<IntegrityLevel> {
     unsafe {
-        let process_handle = if pid == std::process::id() {
+        let is_current = pid == std::process::id();
+        let process_handle = if is_current {
             GetCurrentProcess()
         } else {
             OpenProcess(PROCESS_QUERY_INFORMATION, false, pid)
                 .map_err(|_| WinError::AccessDenied { pid })?
         };
 
-        if process_handle.is_invalid() {
+        // Note: GetCurrentProcess() returns a pseudo-handle (-1) which looks "invalid"
+        // but is actually valid for the current process
+        if !is_current && process_handle.is_invalid() {
             return Err(WinError::AccessDenied { pid });
         }
 
         let mut token_handle = HANDLE::default();
         let result = OpenProcessToken(process_handle, TOKEN_QUERY, &mut token_handle);
 
-        if pid != std::process::id() {
+        if !is_current {
             let _ = CloseHandle(process_handle);
         }
 
@@ -157,21 +160,24 @@ pub fn get_integrity_level(pid: u32) -> WinResult<IntegrityLevel> {
 /// Get enabled privileges for a process
 pub fn get_privileges(pid: u32) -> WinResult<Vec<PrivilegeInfo>> {
     unsafe {
-        let process_handle = if pid == std::process::id() {
+        let is_current = pid == std::process::id();
+        let process_handle = if is_current {
             GetCurrentProcess()
         } else {
             OpenProcess(PROCESS_QUERY_INFORMATION, false, pid)
                 .map_err(|_| WinError::AccessDenied { pid })?
         };
 
-        if process_handle.is_invalid() {
+        // Note: GetCurrentProcess() returns a pseudo-handle (-1) which looks "invalid"
+        // but is actually valid for the current process
+        if !is_current && process_handle.is_invalid() {
             return Err(WinError::AccessDenied { pid });
         }
 
         let mut token_handle = HANDLE::default();
         let result = OpenProcessToken(process_handle, TOKEN_QUERY, &mut token_handle);
 
-        if pid != std::process::id() {
+        if !is_current {
             let _ = CloseHandle(process_handle);
         }
 
