@@ -71,7 +71,7 @@ Ancestry:
 
 #### From GitHub Releases (Recommended)
 
-Download the latest release from the [Releases page](https://github.com/mark-de-graaff/witr-win/releases).
+Download the latest release from the [Releases page](https://github.com/m-de-graaff/witr-win/releases).
 
 ```powershell
 # Download and extract

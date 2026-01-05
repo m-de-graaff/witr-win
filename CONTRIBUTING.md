@@ -36,7 +36,7 @@ This project adheres to the [Contributor Covenant Code of Conduct](CODE_OF_CONDU
 
 3. **Add upstream remote**:
    ```powershell
-   git remote add upstream https://github.com/mark-de-graaff/witr-win.git
+   git remote add upstream https://github.com/m-de-graaff/witr-win.git
    ```
 
 4. **Build the project**:

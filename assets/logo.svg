@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+  <defs>
+    <linearGradient id="grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3b82f6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#8b5cf6;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Background circle -->
+  <circle cx="60" cy="60" r="56" fill="url(#grad)" />
+  
+  <!-- Question mark -->
+  <text x="60" y="78" 
+        font-family="system-ui, -apple-system, sans-serif" 
+        font-size="60" 
+        font-weight="bold" 
+        fill="white" 
+        text-anchor="middle">?</text>
+  
+  <!-- Process tree icon (simplified) -->
+  <g fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round">
+    <line x1="30" y1="95" x2="30" y2="105" />
+    <line x1="30" y1="100" x2="45" y2="100" />
+    <circle cx="48" cy="100" r="3" fill="white" />
+    
+    <line x1="60" y1="95" x2="60" y2="105" />
+    <line x1="60" y1="100" x2="75" y2="100" />
+    <circle cx="78" cy="100" r="3" fill="white" />
+  </g>
+</svg>
+
