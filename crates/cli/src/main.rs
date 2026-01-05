@@ -27,7 +27,6 @@ mod update_check {
     use super::*;
     use serde::Deserialize;
     use std::fs;
-    use std::path::{Path, PathBuf};
 
     const GITHUB_API_URL: &str =
         "https://api.github.com/repos/m-de-graaff/witr-win/releases/latest";
@@ -90,7 +89,7 @@ mod update_check {
         download_url: &str,
         new_version: &str,
     ) -> Result<(), String> {
-        eprintln!("{} {}", "info:".style(colors.info), "Downloading update...");
+        eprintln!("{} Downloading update...", "info:".style(colors.info));
 
         let client = reqwest::blocking::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
@@ -113,6 +112,12 @@ mod update_check {
         // Get current executable path
         let current_exe = std::env::current_exe()
             .map_err(|e| format!("Failed to get current executable path: {}", e))?;
+        
+        eprintln!(
+            "{} Updating executable at: {}",
+            "info:".style(colors.info),
+            current_exe.display()
+        );
 
         // Create temp file for download
         let temp_dir = std::env::temp_dir();
@@ -133,7 +138,7 @@ mod update_check {
 
         drop(file);
 
-        eprintln!("{} {}", "info:".style(colors.info), "Installing update...");
+        eprintln!("{} Installing update...", "info:".style(colors.info));
 
         // On Windows, we can't replace a running executable directly
         // Strategy: rename current exe to .old, then copy new one
@@ -153,26 +158,64 @@ mod update_check {
             ));
         }
 
+        // Verify the downloaded file size is reasonable (at least 1MB)
+        let temp_metadata = fs::metadata(&temp_file)
+            .map_err(|e| format!("Failed to get temp file metadata: {}", e))?;
+        if temp_metadata.len() < 1_000_000 {
+            // Try to restore the old exe before returning error
+            let _ = fs::rename(&old_exe, &current_exe);
+            return Err(format!(
+                "Downloaded file seems too small ({} bytes). Update may have failed.",
+                temp_metadata.len()
+            ));
+        }
+
         // Now copy the new exe to the original location
         match fs::copy(&temp_file, &current_exe) {
-            Ok(_) => {
+            Ok(bytes_copied) => {
+                // Verify the copy was successful by checking file size
+                if bytes_copied != temp_metadata.len() {
+                    // Copy size mismatch - restore old exe
+                    let _ = fs::rename(&old_exe, &current_exe);
+                    return Err(format!(
+                        "File copy incomplete: expected {} bytes, got {} bytes. Old version restored.",
+                        temp_metadata.len(),
+                        bytes_copied
+                    ));
+                }
+
+                // Verify the copied file exists and has correct size
+                match fs::metadata(&current_exe) {
+                    Ok(metadata) => {
+                        if metadata.len() != temp_metadata.len() {
+                            let _ = fs::rename(&old_exe, &current_exe);
+                            return Err(format!(
+                                "Copied file size mismatch. Old version restored."
+                            ));
+                        }
+                    }
+                    Err(e) => {
+                        let _ = fs::rename(&old_exe, &current_exe);
+                        return Err(format!(
+                            "Failed to verify copied file: {}. Old version restored.",
+                            e
+                        ));
+                    }
+                }
+
                 // Success! Clean up temp file and try to remove old exe
                 let _ = fs::remove_file(&temp_file);
                 // Try to remove old exe, but don't fail if it's still in use
                 let _ = fs::remove_file(&old_exe);
 
                 eprintln!(
-                    "{} {}",
+                    "{} Update installed successfully! New version: {}",
                     "success:".style(colors.success),
-                    format!(
-                        "Update installed successfully! New version: {}",
-                        new_version
-                    )
+                    new_version
                 );
                 eprintln!(
-                    "{} {}",
-                    "info:".style(colors.info),
-                    "Please restart witr-win to use the new version."
+                    "{} Please close this window and run 'witr-win --version' in a new terminal to verify.",
+                    "info:".style(colors.info)
                 );
                 Ok(())
             }
@@ -200,7 +243,7 @@ mod update_check {
         eprintln!(
             "{} {}",
             "Run".style(colors.dim),
-            format!("witr-win --update",).style(colors.info)
+            "witr-win --update".style(colors.info)
         );
         eprintln!(
             "{} {}",
@@ -288,7 +331,7 @@ impl Colors {
                 success: Style::new().green(),
                 warning: Style::new().yellow(),
                 error: Style::new().red().bold(),
-                info: Style::new().blue(),
+                info: Style::new().cyan(),
                 dim: Style::new().dimmed(),
                 highlight: Style::new().bold().white(),
             }
@@ -376,12 +419,9 @@ fn handle_check_update(colors: &Colors) {
         std::process::exit(0);
     } else {
         eprintln!(
-            "{} {}",
+            "{} You are using the latest version ({})",
             "info:".style(colors.info),
-            format!(
-                "You are using the latest version ({})",
-                env!("CARGO_PKG_VERSION")
-            )
+            env!("CARGO_PKG_VERSION")
         );
         std::process::exit(0);
     }
@@ -398,29 +438,43 @@ fn handle_update(colors: &Colors) {
             format!("→ {}", latest_version).style(colors.success)
         );
         eprintln!();
+        eprintln!(
+            "{} Downloading from: {}",
+            "info:".style(colors.info),
+            download_url
+        );
+        eprintln!();
 
         match update_check::download_and_install_update(colors, &download_url, &latest_version) {
             Ok(()) => {
+                eprintln!();
+                eprintln!(
+                    "{} To verify the update, close this terminal and run:",
+                    "info:".style(colors.info)
+                );
+                eprintln!("  witr-win --version");
+                eprintln!();
+                eprintln!(
+                    "{} If it still shows the old version, you may be running a different witr-win.exe from your PATH.",
+                    "warning:".style(colors.warning)
+                );
                 std::process::exit(0);
             }
             Err(e) => {
                 print_error(colors, &format!("Update failed: {}", e));
                 eprintln!(
-                    "{} {}",
+                    "{} You can manually download from: {}",
                     "info:".style(colors.info),
-                    format!("You can manually download from: {}", release_url)
+                    release_url
                 );
                 std::process::exit(1);
             }
         }
     } else {
         eprintln!(
-            "{} {}",
+            "{} You are using the latest version ({})",
             "info:".style(colors.info),
-            format!(
-                "You are using the latest version ({})",
-                env!("CARGO_PKG_VERSION")
-            )
+            env!("CARGO_PKG_VERSION")
         );
         std::process::exit(0);
     }
@@ -931,7 +985,7 @@ fn format_warning(warning: &Warning) -> String {
         Warning::NoAdminPrivileges => "Running without admin privileges".to_string(),
         Warning::ParentExited { last_known_ppid } => {
             format!(
-                "Parent process exited (last known PPID: {})",
+                "Parent process (PID {}) has exited; ancestry chain is incomplete",
                 last_known_ppid
             )
         }

@@ -132,16 +132,18 @@ jobs:
       - name: Update WiX version
         run: |
           $version = "${{ steps.version.outputs.version }}"
-          (Get-Content wix.toml) -replace 'product-version = ".*"', "product-version = `"$version`"" | Set-Content wix.toml
-          Write-Host "Updated WiX version to $version (cargo-wix will use this from wix.toml)"
+          (Get-Content crates/cli/wix.toml) -replace 'product-version = ".*"', "product-version = `"$version`"" | Set-Content crates/cli/wix.toml
+          (Get-Content crates/cli/wix/main.wxs) -replace 'Version="[^"]*"', "Version=`"$version`"" | Set-Content crates/cli/wix/main.wxs
+          Write-Host "Updated WiX version to $version"
       
       - name: Install cargo-wix
         run: cargo install cargo-wix --locked
       
       - name: Build MSI installer
         run: |
+          cd crates/cli
           cargo wix --nocapture
-          if (Test-Path "target/wix/witr-win.msi") {
+          if (Test-Path "../../target/wix/witr-win.msi") {
             Write-Host "MSI built successfully"
           } else {
             Write-Error "MSI build failed"
