@@ -108,16 +108,10 @@ jobs:
       
       - name: Update Scoop manifest
         run: |
-          $version = $env:VERSION
-          $hash = $env:EXEHASH
-          if ([string]::IsNullOrEmpty($version)) {
-            Write-Error "Version is empty! VERSION env: '$env:VERSION'"
-            exit 1
-          }
-          if ([string]::IsNullOrEmpty($hash)) {
-            Write-Error "Hash is empty! EXEHASH env: '$env:EXEHASH'"
-            exit 1
-          }
+          $tag = "${{ github.ref }}"
+          $version = $tag -replace 'refs/tags/v', ''
+          $hashLine = Get-Content witr-win.exe.sha256
+          $hash = ($hashLine -split '\s+')[0]
           $manifest = Get-Content witr-win.json -Raw | ConvertFrom-Json
           $manifest.version = $version
           $manifest.url = "https://github.com/m-de-graaff/witr-win/releases/download/v$version/witr-win.exe"
@@ -128,11 +122,8 @@ jobs:
       
       - name: Update Chocolatey package
         run: |
-          $version = $env:VERSION
-          if ([string]::IsNullOrEmpty($version)) {
-            Write-Error "Version is empty! VERSION env: '$env:VERSION'"
-            exit 1
-          }
+          $tag = "${{ github.ref }}"
+          $version = $tag -replace 'refs/tags/v', ''
           # Update nuspec
           $nuspec = [xml](Get-Content chocolatey/witr-win.nuspec)
           $nuspec.package.metadata.version = $version
@@ -145,11 +136,8 @@ jobs:
       
       - name: Update WiX version
         run: |
-          $version = $env:VERSION
-          if ([string]::IsNullOrEmpty($version)) {
-            Write-Error "Version is empty! VERSION env: '$env:VERSION'"
-            exit 1
-          }
+          $tag = "${{ github.ref }}"
+          $version = $tag -replace 'refs/tags/v', ''
           (Get-Content crates/cli/wix.toml) -replace 'product-version = ".*"', "product-version = `"$version`"" | Set-Content crates/cli/wix.toml
           (Get-Content crates/cli/wix/main.wxs) -replace 'Version="[^"]*"', "Version=`"$version`"" | Set-Content crates/cli/wix/main.wxs
           Write-Host "Updated WiX version to $version"
@@ -172,7 +160,8 @@ jobs:
         run: |
           if (-not (Test-Path "dist")) { New-Item -ItemType Directory -Path "dist" | Out-Null }
           choco pack chocolatey/witr-win.nuspec --output-directory=dist
-          $version = $env:VERSION
+          $tag = "${{ github.ref }}"
+          $version = $tag -replace 'refs/tags/v', ''
           if (Test-Path "dist/witr-win.$version.nupkg") {
             Write-Host "Chocolatey package built successfully"
           } else {
