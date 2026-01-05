@@ -108,14 +108,14 @@ jobs:
       
       - name: Update Scoop manifest
         run: |
-          $version = if ($env:VERSION) { $env:VERSION } else { "${{ steps.version.outputs.version }}" }
-          $hash = if ($env:EXEHASH) { $env:EXEHASH } else { "${{ steps.checksums.outputs.exeHash }}" }
+          $version = "${{ steps.version.outputs.version }}"
+          $hash = "${{ steps.checksums.outputs.exeHash }}"
           if ([string]::IsNullOrEmpty($version)) {
-            Write-Error "Version is empty! VERSION env: $env:VERSION, step output: ${{ steps.version.outputs.version }}"
+            Write-Error "Version is empty! Step output: ${{ steps.version.outputs.version }}"
             exit 1
           }
           if ([string]::IsNullOrEmpty($hash)) {
-            Write-Error "Hash is empty! EXEHASH env: $env:EXEHASH, step output: ${{ steps.checksums.outputs.exeHash }}"
+            Write-Error "Hash is empty! Step output: ${{ steps.checksums.outputs.exeHash }}"
             exit 1
           }
           $manifest = Get-Content witr-win.json -Raw | ConvertFrom-Json
@@ -128,9 +128,9 @@ jobs:
       
       - name: Update Chocolatey package
         run: |
-          $version = if ($env:VERSION) { $env:VERSION } else { "${{ steps.version.outputs.version }}" }
+          $version = "${{ steps.version.outputs.version }}"
           if ([string]::IsNullOrEmpty($version)) {
-            Write-Error "Version is empty!"
+            Write-Error "Version is empty! Step output: ${{ steps.version.outputs.version }}"
             exit 1
           }
           # Update nuspec
@@ -145,9 +145,9 @@ jobs:
       
       - name: Update WiX version
         run: |
-          $version = if ($env:VERSION) { $env:VERSION } else { "${{ steps.version.outputs.version }}" }
+          $version = "${{ steps.version.outputs.version }}"
           if ([string]::IsNullOrEmpty($version)) {
-            Write-Error "Version is empty!"
+            Write-Error "Version is empty! Step output: ${{ steps.version.outputs.version }}"
             exit 1
           }
           (Get-Content crates/cli/wix.toml) -replace 'product-version = ".*"', "product-version = `"$version`"" | Set-Content crates/cli/wix.toml
