@@ -677,6 +677,7 @@ mod tests {
                         session_id: None,
                         memory_bytes: None,
                         working_dir: None,
+                        thread_count: None,
                     },
                     relation,
                     notes: vec![],

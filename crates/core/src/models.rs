@@ -49,6 +49,8 @@ pub struct ProcessInfo {
     pub memory_bytes: Option<u64>,
     /// Current working directory of the process
     pub working_dir: Option<String>,
+    /// Number of threads in the process
+    pub thread_count: Option<u32>,
 }
 
 impl ProcessInfo {

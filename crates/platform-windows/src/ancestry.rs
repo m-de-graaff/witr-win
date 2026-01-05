@@ -4,7 +4,7 @@
 
 use crate::error::{WinError, WinResult};
 use crate::process_query::{
-    get_image_path, get_memory_usage, get_session_id, get_start_time, get_user,
+    get_command_line, get_image_path, get_memory_usage, get_session_id, get_start_time, get_user,
     get_working_directory,
 };
 use crate::process_snapshot::{list_processes, ProcessEntry};
@@ -28,6 +28,7 @@ pub fn build_process_info(entry: &ProcessEntry) -> ProcessInfo {
     let session_id = get_session_id(entry.pid).ok();
     let memory_bytes = get_memory_usage(entry.pid).ok();
     let working_dir = get_working_directory(entry.pid).ok();
+    let cmdline = get_command_line(entry.pid).ok();
 
     ProcessInfo {
         pid: entry.pid,
@@ -39,10 +40,11 @@ pub fn build_process_info(entry: &ProcessEntry) -> ProcessInfo {
         image_path: image_path.map(|p| p.to_string_lossy().to_string()),
         user,
         start_time,
-        cmdline: None, // TODO: implement cmdline via WMI or NtQueryInformationProcess
+        cmdline,
         session_id,
         memory_bytes,
         working_dir,
+        thread_count: Some(entry.thread_count),
     }
 }
 
@@ -173,6 +175,7 @@ pub fn build_ancestry(
                         session_id: None,
                         memory_bytes: None,
                         working_dir: None,
+                        thread_count: None,
                     },
                     relation: AncestryRelation::Orphaned,
                     notes: vec!["Process has exited".to_string()],

@@ -51,8 +51,16 @@ pub fn analyze_pid(pid: u32) -> WinResult<Report> {
         Ok(classification_result) => {
             report.source = classification_result.classification;
             report.evidence = classification_result.evidence;
+            // Don't add duplicate warnings from classify_process
+            // (it also builds ancestry internally which generates the same warnings)
             for warning in classification_result.warnings {
-                report.add_warning(warning);
+                if !report
+                    .warnings
+                    .iter()
+                    .any(|w| std::mem::discriminant(w) == std::mem::discriminant(&warning))
+                {
+                    report.add_warning(warning);
+                }
             }
         }
         Err(e) => {

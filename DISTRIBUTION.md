@@ -121,6 +121,25 @@ The tool also automatically checks for updates on every run and displays a notif
 - **Administrator Rights:** Some features require administrator privileges. Run PowerShell/CMD as Administrator when needed.
 - **Version Information:** Check the installed version with `witr-win --version`
 
+## ✨ Available Features
+
+Once installed, witr-win provides:
+
+| Feature | Command |
+|---------|---------|
+| Query by PID | `witr-win --pid 1234` |
+| Query by port | `witr-win --port 5000` |
+| Query by name | `witr-win notepad.exe` |
+| Show loaded modules | `witr-win --pid 1234 --modules` |
+| Show open handles | `witr-win --pid 1234 --handles` |
+| Show performance metrics | `witr-win --pid 1234 --perf` |
+| JSON output | `witr-win --pid 1234 --json` |
+| Tree view | `witr-win --pid 1234 --tree` |
+| Check for updates | `witr-win --check-update` |
+| Install updates | `witr-win --update` |
+
+Run `witr-win --help` for full command reference.
+
 ## 🤝 Contributing Distribution Methods
 
 If you'd like to add support for additional package managers (winget, Nix, etc.), please open an issue or submit a pull request!

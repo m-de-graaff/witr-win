@@ -341,18 +341,22 @@ pub fn get_session_id(pid: u32) -> WinResult<u32> {
 /// Get memory usage (working set size) for a process in bytes
 pub fn get_memory_usage(pid: u32) -> WinResult<u64> {
     unsafe {
-        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).map_err(|e| {
-            if e.code().0 as u32 == 0x80070005 {
-                WinError::AccessDenied { pid }
-            } else if e.code().0 as u32 == 0x80070057 {
-                WinError::ProcessNotFound { pid }
-            } else {
-                WinError::ApiError {
-                    api: "OpenProcess",
-                    message: e.message().to_string(),
+        // GetProcessMemoryInfo requires PROCESS_QUERY_INFORMATION | PROCESS_VM_READ
+        // Try with full permissions first, fall back to limited
+        let handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid)
+            .or_else(|_| OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid))
+            .map_err(|e| {
+                if e.code().0 as u32 == 0x80070005 {
+                    WinError::AccessDenied { pid }
+                } else if e.code().0 as u32 == 0x80070057 {
+                    WinError::ProcessNotFound { pid }
+                } else {
+                    WinError::ApiError {
+                        api: "OpenProcess",
+                        message: e.message().to_string(),
+                    }
                 }
-            }
-        })?;
+            })?;
 
         let _handle = SafeHandle::new(handle);
 
@@ -510,6 +514,370 @@ pub fn get_working_directory(pid: u32) -> WinResult<String> {
 
         Ok(path)
     }
+}
+
+/// Get the command line of a process
+///
+/// This uses NtQueryInformationProcess to read the PEB and extract the
+/// CommandLine from RTL_USER_PROCESS_PARAMETERS.
+pub fn get_command_line(pid: u32) -> WinResult<String> {
+    unsafe {
+        // Need PROCESS_QUERY_INFORMATION and PROCESS_VM_READ to read process memory
+        let handle =
+            OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid).map_err(|e| {
+                if e.code().0 as u32 == 0x80070005 {
+                    WinError::AccessDenied { pid }
+                } else if e.code().0 as u32 == 0x80070057 {
+                    WinError::ProcessNotFound { pid }
+                } else {
+                    WinError::ApiError {
+                        api: "OpenProcess",
+                        message: e.message().to_string(),
+                    }
+                }
+            })?;
+
+        let _handle = SafeHandle::new(handle);
+
+        // Get the PEB address using NtQueryInformationProcess
+        let mut pbi: ProcessBasicInformation = std::mem::zeroed();
+        let mut return_length: u32 = 0;
+
+        let status = NtQueryInformationProcess(
+            handle,
+            PROCESS_BASIC_INFORMATION_CLASS,
+            &mut pbi as *mut _ as *mut std::ffi::c_void,
+            std::mem::size_of::<ProcessBasicInformation>() as u32,
+            &mut return_length,
+        );
+
+        if status.0 != 0 {
+            return Err(WinError::ApiError {
+                api: "NtQueryInformationProcess",
+                message: format!("NTSTATUS: 0x{:08X}", status.0),
+            });
+        }
+
+        if pbi.peb_base_address.is_null() {
+            return Err(WinError::ApiError {
+                api: "NtQueryInformationProcess",
+                message: "PEB address is null".to_string(),
+            });
+        }
+
+        // Read the ProcessParameters pointer from the PEB
+        #[cfg(target_pointer_width = "64")]
+        const PROCESS_PARAMETERS_OFFSET: usize = 0x20;
+        #[cfg(target_pointer_width = "32")]
+        const PROCESS_PARAMETERS_OFFSET: usize = 0x10;
+
+        let mut process_parameters_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
+        let mut bytes_read: usize = 0;
+
+        let peb_addr = pbi.peb_base_address as usize;
+        let params_ptr_addr = peb_addr + PROCESS_PARAMETERS_OFFSET;
+
+        ReadProcessMemory(
+            handle,
+            params_ptr_addr as *const std::ffi::c_void,
+            &mut process_parameters_ptr as *mut _ as *mut std::ffi::c_void,
+            std::mem::size_of::<*mut std::ffi::c_void>(),
+            Some(&mut bytes_read),
+        )
+        .map_err(|e| WinError::ApiError {
+            api: "ReadProcessMemory (ProcessParameters ptr)",
+            message: e.message().to_string(),
+        })?;
+
+        if process_parameters_ptr.is_null() {
+            return Err(WinError::ApiError {
+                api: "ReadProcessMemory",
+                message: "ProcessParameters is null".to_string(),
+            });
+        }
+
+        // Read the CommandLine from RTL_USER_PROCESS_PARAMETERS
+        // CommandLine (UNICODE_STRING) is at offset 0x70 on x64, 0x40 on x86
+        #[cfg(target_pointer_width = "64")]
+        const COMMAND_LINE_OFFSET: usize = 0x70;
+        #[cfg(target_pointer_width = "32")]
+        const COMMAND_LINE_OFFSET: usize = 0x40;
+
+        let cmdline_addr = process_parameters_ptr as usize + COMMAND_LINE_OFFSET;
+        let mut cmdline_us: UnicodeString = std::mem::zeroed();
+
+        ReadProcessMemory(
+            handle,
+            cmdline_addr as *const std::ffi::c_void,
+            &mut cmdline_us as *mut _ as *mut std::ffi::c_void,
+            std::mem::size_of::<UnicodeString>(),
+            Some(&mut bytes_read),
+        )
+        .map_err(|e| WinError::ApiError {
+            api: "ReadProcessMemory (CommandLine)",
+            message: e.message().to_string(),
+        })?;
+
+        if cmdline_us.buffer.is_null() || cmdline_us.length == 0 {
+            return Err(WinError::ApiError {
+                api: "ReadProcessMemory",
+                message: "CommandLine buffer is null or empty".to_string(),
+            });
+        }
+
+        // Read the actual command line string
+        let cmdline_len = (cmdline_us.length / 2) as usize; // length is in bytes, we need chars
+        let mut cmdline_buffer: Vec<u16> = vec![0; cmdline_len];
+
+        ReadProcessMemory(
+            handle,
+            cmdline_us.buffer as *const std::ffi::c_void,
+            cmdline_buffer.as_mut_ptr() as *mut std::ffi::c_void,
+            cmdline_us.length as usize,
+            Some(&mut bytes_read),
+        )
+        .map_err(|e| WinError::ApiError {
+            api: "ReadProcessMemory (cmdline string)",
+            message: e.message().to_string(),
+        })?;
+
+        let cmdline = String::from_utf16_lossy(&cmdline_buffer);
+        Ok(cmdline.trim().to_string())
+    }
+}
+
+/// Truncate a command line for display, keeping it under max_len characters
+pub fn truncate_cmdline(cmdline: &str, max_len: usize) -> String {
+    if cmdline.len() <= max_len {
+        cmdline.to_string()
+    } else {
+        format!("{}...", &cmdline[..max_len - 3])
+    }
+}
+
+/// Environment variable info
+#[derive(Debug, Clone)]
+pub struct EnvVar {
+    /// Variable name
+    pub name: String,
+    /// Variable value
+    pub value: String,
+}
+
+/// Well-known interesting environment variables to display
+const INTERESTING_ENV_VARS: &[&str] = &[
+    "PATH",
+    "PATHEXT",
+    "USERNAME",
+    "USERDOMAIN",
+    "USERPROFILE",
+    "COMPUTERNAME",
+    "PROCESSOR_ARCHITECTURE",
+    "OS",
+    "TEMP",
+    "TMP",
+    "HOME",
+    "HOMEPATH",
+    "HOMEDRIVE",
+    "JAVA_HOME",
+    "PYTHON_HOME",
+    "NODE_PATH",
+    "GOPATH",
+    "RUST_BACKTRACE",
+    "DEBUG",
+    "NODE_ENV",
+    "ASPNETCORE_ENVIRONMENT",
+    "DOTNET_ENVIRONMENT",
+];
+
+/// Get environment variables for a process
+///
+/// This reads the environment block from the process's PEB.
+/// Returns all environment variables, which can be filtered by the caller.
+pub fn get_environment_variables(pid: u32) -> WinResult<Vec<EnvVar>> {
+    unsafe {
+        // Need PROCESS_QUERY_INFORMATION and PROCESS_VM_READ to read process memory
+        let handle =
+            OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, false, pid).map_err(|e| {
+                if e.code().0 as u32 == 0x80070005 {
+                    WinError::AccessDenied { pid }
+                } else if e.code().0 as u32 == 0x80070057 {
+                    WinError::ProcessNotFound { pid }
+                } else {
+                    WinError::ApiError {
+                        api: "OpenProcess",
+                        message: e.message().to_string(),
+                    }
+                }
+            })?;
+
+        let _handle = SafeHandle::new(handle);
+
+        // Get the PEB address using NtQueryInformationProcess
+        let mut pbi: ProcessBasicInformation = std::mem::zeroed();
+        let mut return_length: u32 = 0;
+
+        let status = NtQueryInformationProcess(
+            handle,
+            PROCESS_BASIC_INFORMATION_CLASS,
+            &mut pbi as *mut _ as *mut std::ffi::c_void,
+            std::mem::size_of::<ProcessBasicInformation>() as u32,
+            &mut return_length,
+        );
+
+        if status.0 != 0 {
+            return Err(WinError::ApiError {
+                api: "NtQueryInformationProcess",
+                message: format!("NTSTATUS: 0x{:08X}", status.0),
+            });
+        }
+
+        if pbi.peb_base_address.is_null() {
+            return Err(WinError::ApiError {
+                api: "NtQueryInformationProcess",
+                message: "PEB address is null".to_string(),
+            });
+        }
+
+        // Read the ProcessParameters pointer from the PEB
+        #[cfg(target_pointer_width = "64")]
+        const PROCESS_PARAMETERS_OFFSET: usize = 0x20;
+        #[cfg(target_pointer_width = "32")]
+        const PROCESS_PARAMETERS_OFFSET: usize = 0x10;
+
+        let mut process_parameters_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
+        let mut bytes_read: usize = 0;
+
+        let peb_addr = pbi.peb_base_address as usize;
+        let params_ptr_addr = peb_addr + PROCESS_PARAMETERS_OFFSET;
+
+        ReadProcessMemory(
+            handle,
+            params_ptr_addr as *const std::ffi::c_void,
+            &mut process_parameters_ptr as *mut _ as *mut std::ffi::c_void,
+            std::mem::size_of::<*mut std::ffi::c_void>(),
+            Some(&mut bytes_read),
+        )
+        .map_err(|e| WinError::ApiError {
+            api: "ReadProcessMemory (ProcessParameters ptr)",
+            message: e.message().to_string(),
+        })?;
+
+        if process_parameters_ptr.is_null() {
+            return Err(WinError::ApiError {
+                api: "ReadProcessMemory",
+                message: "ProcessParameters is null".to_string(),
+            });
+        }
+
+        // Read the Environment pointer from RTL_USER_PROCESS_PARAMETERS
+        // Environment is at offset 0x80 on x64, 0x48 on x86
+        #[cfg(target_pointer_width = "64")]
+        const ENVIRONMENT_OFFSET: usize = 0x80;
+        #[cfg(target_pointer_width = "32")]
+        const ENVIRONMENT_OFFSET: usize = 0x48;
+
+        // Also need EnvironmentSize at offset 0x03F0 on x64, 0x0290 on x86
+        #[cfg(target_pointer_width = "64")]
+        const ENVIRONMENT_SIZE_OFFSET: usize = 0x03F0;
+        #[cfg(target_pointer_width = "32")]
+        const ENVIRONMENT_SIZE_OFFSET: usize = 0x0290;
+
+        let env_ptr_addr = process_parameters_ptr as usize + ENVIRONMENT_OFFSET;
+        let mut environment_ptr: *mut u16 = std::ptr::null_mut();
+
+        ReadProcessMemory(
+            handle,
+            env_ptr_addr as *const std::ffi::c_void,
+            &mut environment_ptr as *mut _ as *mut std::ffi::c_void,
+            std::mem::size_of::<*mut u16>(),
+            Some(&mut bytes_read),
+        )
+        .map_err(|e| WinError::ApiError {
+            api: "ReadProcessMemory (Environment ptr)",
+            message: e.message().to_string(),
+        })?;
+
+        if environment_ptr.is_null() {
+            return Ok(Vec::new()); // No environment block
+        }
+
+        // Try to read environment size
+        let env_size_addr = process_parameters_ptr as usize + ENVIRONMENT_SIZE_OFFSET;
+        let mut env_size: usize = 0;
+
+        let size_result = ReadProcessMemory(
+            handle,
+            env_size_addr as *const std::ffi::c_void,
+            &mut env_size as *mut _ as *mut std::ffi::c_void,
+            std::mem::size_of::<usize>(),
+            Some(&mut bytes_read),
+        );
+
+        // If we couldn't read the size, use a reasonable default
+        if size_result.is_err() || env_size == 0 || env_size > 1024 * 1024 {
+            env_size = 32768; // 32KB default, should be enough for most cases
+        }
+
+        // Read the environment block
+        let env_chars = env_size / 2; // Size is in bytes, we need chars
+        let mut env_buffer: Vec<u16> = vec![0; env_chars];
+
+        ReadProcessMemory(
+            handle,
+            environment_ptr as *const std::ffi::c_void,
+            env_buffer.as_mut_ptr() as *mut std::ffi::c_void,
+            env_size,
+            Some(&mut bytes_read),
+        )
+        .map_err(|e| WinError::ApiError {
+            api: "ReadProcessMemory (environment block)",
+            message: e.message().to_string(),
+        })?;
+
+        // Parse the environment block
+        // Format: VAR1=VALUE1\0VAR2=VALUE2\0...\0\0 (double null terminated)
+        let mut env_vars = Vec::new();
+        let mut start = 0;
+
+        for i in 0..env_buffer.len() {
+            if env_buffer[i] == 0 {
+                if start == i {
+                    // Double null - end of environment block
+                    break;
+                }
+
+                let var_str = String::from_utf16_lossy(&env_buffer[start..i]);
+                if let Some(eq_pos) = var_str.find('=') {
+                    let name = var_str[..eq_pos].to_string();
+                    let value = var_str[eq_pos + 1..].to_string();
+
+                    // Skip empty names (first entry is sometimes "=C:=C:\...")
+                    if !name.is_empty() {
+                        env_vars.push(EnvVar { name, value });
+                    }
+                }
+
+                start = i + 1;
+            }
+        }
+
+        Ok(env_vars)
+    }
+}
+
+/// Get only the "interesting" environment variables for display
+pub fn get_interesting_env_vars(pid: u32) -> WinResult<Vec<EnvVar>> {
+    let all_vars = get_environment_variables(pid)?;
+
+    Ok(all_vars
+        .into_iter()
+        .filter(|v| {
+            INTERESTING_ENV_VARS
+                .iter()
+                .any(|&name| v.name.eq_ignore_ascii_case(name))
+        })
+        .collect())
 }
 
 #[cfg(test)]

@@ -176,16 +176,23 @@ docs(readme): add installation instructions for winget
 
 ```
 crates/
-├── core/              # OS-agnostic domain models
-│   ├── models.rs      # Data structures
-│   ├── report.rs      # Report type
-│   └── render/        # Output formatters
-├── platform-windows/  # Windows-specific code
-│   ├── process_*.rs   # Process APIs
-│   ├── net.rs         # Network APIs
-│   └── ancestry.rs    # Chain building
-└── cli/               # CLI application
-    └── main.rs        # Entry point
+├── core/                  # OS-agnostic domain models
+│   ├── models.rs          # Data structures (ProcessInfo, Report, etc.)
+│   ├── report.rs          # Report type definitions
+│   └── render/            # Output formatters (JSON, text, tree)
+├── platform-windows/      # Windows-specific code
+│   ├── analyzer.rs        # Main analysis orchestration
+│   ├── ancestry.rs        # Process ancestry chain building
+│   ├── classifier.rs      # Source classification (Service/Task/Interactive)
+│   ├── error.rs           # Error types (WinError, WinResult)
+│   ├── handles.rs         # Open handle enumeration (files, registry, etc.)
+│   ├── net.rs             # Network APIs (port → PID)
+│   ├── perf.rs            # Performance metrics (CPU, I/O stats)
+│   ├── process_query.rs   # Detailed process info (memory, user, etc.)
+│   ├── process_snapshot.rs # Process/module listing
+│   └── services.rs        # Windows service detection
+└── cli/                   # CLI application
+    └── main.rs            # Entry point, argument parsing, output formatting
 ```
 
 ### Adding Windows API Calls
@@ -235,19 +242,31 @@ Use the issue template, or include:
 3. **Describe the use case** - Why is this feature needed?
 4. **Propose a solution** - How might it work?
 
-### Feature Scope (v1)
+### Current Feature Scope
 
-Currently in scope:
+Currently implemented:
 - Process ancestry chain
 - Port → PID resolution
+- Name → PID resolution (with multi-process table view)
 - Service/Task/Interactive classification
-- JSON/text/tree output
+- JSON/text/tree/short output formats
+- Memory usage & process tree totals
+- Loaded modules listing (`--modules`)
+- Open handles enumeration (`--handles`)
+- Performance metrics (`--perf`)
+- Auto-update functionality
+- Pretty aligned output with Unicode tables
 
-Out of scope for v1:
+Planned features (see FEATURES.md):
+- Watch mode (real-time monitoring)
+- Network connections (all states)
+- Container detection (Docker, WSL)
+- Interactive TUI mode
+
+Out of scope:
 - Kernel driver integration
-- Real-time monitoring
 - GUI interface
-- Cross-platform support
+- Cross-platform support (use [witr](https://github.com/pranshuparmar/witr) for Linux/macOS)
 
 ---
 

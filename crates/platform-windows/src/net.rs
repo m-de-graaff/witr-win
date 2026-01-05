@@ -403,6 +403,246 @@ fn get_udp6_bindings(port: u16) -> WinResult<Vec<PortBinding>> {
     Ok(bindings)
 }
 
+/// Network connection with remote endpoint info
+#[derive(Debug, Clone)]
+pub struct NetworkConnection {
+    /// Process ID owning the connection
+    pub pid: u32,
+    /// Protocol (TCP or UDP)
+    pub protocol: Protocol,
+    /// Local address
+    pub local_addr: IpAddr,
+    /// Local port
+    pub local_port: u16,
+    /// Remote address (None for UDP or LISTEN)
+    pub remote_addr: Option<IpAddr>,
+    /// Remote port (None for UDP or LISTEN)
+    pub remote_port: Option<u16>,
+    /// TCP state (only for TCP)
+    pub state: Option<TcpState>,
+}
+
+/// Get all network connections for a specific PID
+pub fn get_connections_for_pid(pid: u32) -> WinResult<Vec<NetworkConnection>> {
+    let mut connections = Vec::new();
+
+    // TCP IPv4
+    unsafe {
+        let mut size = 0u32;
+        let _ = GetExtendedTcpTable(
+            None,
+            &mut size,
+            false,
+            AF_INET.0 as u32,
+            TCP_TABLE_OWNER_PID_ALL,
+            0,
+        );
+
+        if size > 0 {
+            let mut buffer: Vec<u8> = vec![0; size as usize];
+            let result = GetExtendedTcpTable(
+                Some(buffer.as_mut_ptr() as *mut _),
+                &mut size,
+                false,
+                AF_INET.0 as u32,
+                TCP_TABLE_OWNER_PID_ALL,
+                0,
+            );
+
+            if result == 0 {
+                let table = &*(buffer.as_ptr() as *const MIB_TCPTABLE_OWNER_PID);
+                let rows =
+                    std::slice::from_raw_parts(table.table.as_ptr(), table.dwNumEntries as usize);
+
+                for row in rows {
+                    if row.dwOwningPid == pid {
+                        let state = TcpState::from_mib_state(row.dwState);
+                        let local_addr = Ipv4Addr::from(row.dwLocalAddr.to_be());
+                        let remote_addr = Ipv4Addr::from(row.dwRemoteAddr.to_be());
+                        let local_port = u16::from_be(row.dwLocalPort as u16);
+                        let remote_port = u16::from_be(row.dwRemotePort as u16);
+
+                        connections.push(NetworkConnection {
+                            pid,
+                            protocol: Protocol::Tcp,
+                            local_addr: IpAddr::V4(local_addr),
+                            local_port,
+                            remote_addr: if state == TcpState::Listen {
+                                None
+                            } else {
+                                Some(IpAddr::V4(remote_addr))
+                            },
+                            remote_port: if state == TcpState::Listen {
+                                None
+                            } else {
+                                Some(remote_port)
+                            },
+                            state: Some(state),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // TCP IPv6
+    unsafe {
+        let mut size = 0u32;
+        let _ = GetExtendedTcpTable(
+            None,
+            &mut size,
+            false,
+            AF_INET6.0 as u32,
+            TCP_TABLE_OWNER_PID_ALL,
+            0,
+        );
+
+        if size > 0 {
+            let mut buffer: Vec<u8> = vec![0; size as usize];
+            let result = GetExtendedTcpTable(
+                Some(buffer.as_mut_ptr() as *mut _),
+                &mut size,
+                false,
+                AF_INET6.0 as u32,
+                TCP_TABLE_OWNER_PID_ALL,
+                0,
+            );
+
+            if result == 0 {
+                let table = &*(buffer.as_ptr() as *const MIB_TCP6TABLE_OWNER_PID);
+                let rows =
+                    std::slice::from_raw_parts(table.table.as_ptr(), table.dwNumEntries as usize);
+
+                for row in rows {
+                    if row.dwOwningPid == pid {
+                        let state = TcpState::from_mib_state(row.dwState);
+                        let local_addr = Ipv6Addr::from(row.ucLocalAddr);
+                        let remote_addr = Ipv6Addr::from(row.ucRemoteAddr);
+                        let local_port = u16::from_be(row.dwLocalPort as u16);
+                        let remote_port = u16::from_be(row.dwRemotePort as u16);
+
+                        connections.push(NetworkConnection {
+                            pid,
+                            protocol: Protocol::Tcp,
+                            local_addr: IpAddr::V6(local_addr),
+                            local_port,
+                            remote_addr: if state == TcpState::Listen {
+                                None
+                            } else {
+                                Some(IpAddr::V6(remote_addr))
+                            },
+                            remote_port: if state == TcpState::Listen {
+                                None
+                            } else {
+                                Some(remote_port)
+                            },
+                            state: Some(state),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // UDP IPv4
+    unsafe {
+        let mut size = 0u32;
+        let _ = GetExtendedUdpTable(
+            None,
+            &mut size,
+            false,
+            AF_INET.0 as u32,
+            UDP_TABLE_OWNER_PID,
+            0,
+        );
+
+        if size > 0 {
+            let mut buffer: Vec<u8> = vec![0; size as usize];
+            let result = GetExtendedUdpTable(
+                Some(buffer.as_mut_ptr() as *mut _),
+                &mut size,
+                false,
+                AF_INET.0 as u32,
+                UDP_TABLE_OWNER_PID,
+                0,
+            );
+
+            if result == 0 {
+                let table = &*(buffer.as_ptr() as *const MIB_UDPTABLE_OWNER_PID);
+                let rows =
+                    std::slice::from_raw_parts(table.table.as_ptr(), table.dwNumEntries as usize);
+
+                for row in rows {
+                    if row.dwOwningPid == pid {
+                        let local_addr = Ipv4Addr::from(row.dwLocalAddr.to_be());
+                        let local_port = u16::from_be(row.dwLocalPort as u16);
+
+                        connections.push(NetworkConnection {
+                            pid,
+                            protocol: Protocol::Udp,
+                            local_addr: IpAddr::V4(local_addr),
+                            local_port,
+                            remote_addr: None,
+                            remote_port: None,
+                            state: None,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // UDP IPv6
+    unsafe {
+        let mut size = 0u32;
+        let _ = GetExtendedUdpTable(
+            None,
+            &mut size,
+            false,
+            AF_INET6.0 as u32,
+            UDP_TABLE_OWNER_PID,
+            0,
+        );
+
+        if size > 0 {
+            let mut buffer: Vec<u8> = vec![0; size as usize];
+            let result = GetExtendedUdpTable(
+                Some(buffer.as_mut_ptr() as *mut _),
+                &mut size,
+                false,
+                AF_INET6.0 as u32,
+                UDP_TABLE_OWNER_PID,
+                0,
+            );
+
+            if result == 0 {
+                let table = &*(buffer.as_ptr() as *const MIB_UDP6TABLE_OWNER_PID);
+                let rows =
+                    std::slice::from_raw_parts(table.table.as_ptr(), table.dwNumEntries as usize);
+
+                for row in rows {
+                    if row.dwOwningPid == pid {
+                        let local_addr = Ipv6Addr::from(row.ucLocalAddr);
+                        let local_port = u16::from_be(row.dwLocalPort as u16);
+
+                        connections.push(NetworkConnection {
+                            pid,
+                            protocol: Protocol::Udp,
+                            local_addr: IpAddr::V6(local_addr),
+                            local_port,
+                            remote_addr: None,
+                            remote_port: None,
+                            state: None,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(connections)
+}
+
 /// List all listening TCP ports
 pub fn list_tcp_listeners() -> WinResult<Vec<PortBinding>> {
     let mut bindings = Vec::new();

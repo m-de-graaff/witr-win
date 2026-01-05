@@ -14,12 +14,20 @@
 use clap::Parser;
 use owo_colors::{OwoColorize, Style};
 use std::io::{self, Write};
+use tabled::{
+    settings::{object::Columns, style::Style as TableStyle, Alignment, Modify},
+    Table, Tabled,
+};
 use witr_core::{render, Confidence, Report, SourceKind, Target, Warning};
+
+/// Label width for aligned output
+const LABEL_WIDTH: usize = 12;
 
 #[cfg(windows)]
 use witr_platform_windows::{
-    analyze_name, analyze_pid, analyze_port, list_processes, pids_for_port, NameAnalysisResult,
-    PortAnalysisResult,
+    analyze_name, analyze_pid, analyze_port, get_connections_for_pid, get_interesting_env_vars,
+    get_process_performance, list_handles, list_modules, list_processes, pids_for_port, HandleInfo,
+    NameAnalysisResult, NetworkConnection, PortAnalysisResult,
 };
 
 /// Update checking module
@@ -299,6 +307,22 @@ struct Cli {
     /// Show verbose output including all evidence
     #[arg(long, short = 'v')]
     verbose: bool,
+
+    /// Show loaded modules/DLLs for the process
+    #[arg(long, short = 'm')]
+    modules: bool,
+
+    /// Show open file handles for the process
+    #[arg(long, short = 'H')]
+    handles: bool,
+
+    /// Show performance metrics (CPU time, I/O stats)
+    #[arg(long)]
+    perf: bool,
+
+    /// Show network connections for the process
+    #[arg(long, short = 'n')]
+    net: bool,
 
     /// Check for updates and display notification if available
     #[arg(long)]
@@ -712,11 +736,79 @@ fn render_name_result(result: &NameAnalysisResult, cli: &Cli, colors: &Colors) {
                 std::process::exit(1);
             }
         }
+    } else if result.reports.len() > 5 {
+        // Use table for many processes (like Chrome with many tabs)
+        print_multi_process_table(result, cli, colors);
     } else {
-        // Just show the first match for non-JSON output
+        // Show details for first match, list others
         if let Some(report) = result.reports.first() {
             render_report(report, cli, colors);
         }
+    }
+}
+
+/// Print a table view for multiple matching processes
+#[cfg(windows)]
+fn print_multi_process_table(result: &NameAnalysisResult, cli: &Cli, colors: &Colors) {
+    let stdout = io::stdout();
+    let mut out = stdout.lock();
+
+    println!(
+        "\n{} {} matching processes found:\n",
+        "→".style(colors.info),
+        result.reports.len()
+    );
+
+    // Build process rows
+    let rows: Vec<ProcessRow> = result
+        .reports
+        .iter()
+        .filter_map(|r| r.process.as_ref())
+        .map(|proc| ProcessRow {
+            pid: proc.pid,
+            name: proc.name().to_string(),
+            memory: proc
+                .memory_bytes
+                .map(format_memory_size)
+                .unwrap_or_else(|| "-".to_string()),
+            user: proc.user.clone().unwrap_or_else(|| "-".to_string()),
+        })
+        .collect();
+
+    let table = Table::new(&rows)
+        .with(TableStyle::rounded())
+        .with(Modify::new(Columns::single(0)).with(Alignment::right()))
+        .with(Modify::new(Columns::single(2)).with(Alignment::right()))
+        .to_string();
+
+    for line in table.lines() {
+        writeln!(out, "  {}", line).ok();
+    }
+
+    println!(
+        "\n{} Use {} to see details for a specific process.",
+        "tip:".style(colors.dim),
+        "--pid <PID>".style(colors.info)
+    );
+
+    // If verbose, show first process details
+    if cli.verbose {
+        if let Some(report) = result.reports.first() {
+            println!("\n{}", "─".repeat(50).style(colors.dim));
+            println!(
+                "{} Showing details for first match:\n",
+                "→".style(colors.info)
+            );
+            render_report(report, cli, colors);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn print_multi_process_table(result: &NameAnalysisResult, cli: &Cli, colors: &Colors) {
+    // Fallback for non-Windows
+    if let Some(report) = result.reports.first() {
+        render_report(report, cli, colors);
     }
 }
 
@@ -779,18 +871,344 @@ fn format_memory_size(bytes: u64) -> String {
     }
 }
 
+/// Format module size in human-readable format
+fn format_module_size(bytes: u32) -> String {
+    const KB: u32 = 1024;
+    const MB: u32 = KB * 1024;
+
+    if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{} B", bytes)
+    }
+}
+
+/// Print an aligned label with value
+fn print_row(
+    out: &mut impl Write,
+    label: &str,
+    value: &str,
+    label_style: Style,
+    value_style: Style,
+) {
+    writeln!(
+        out,
+        "{:>width$} : {}",
+        label.style(label_style),
+        value.style(value_style),
+        width = LABEL_WIDTH
+    )
+    .ok();
+}
+
+/// Print an aligned label with styled value (already styled)
+fn print_row_raw(out: &mut impl Write, label: &str, value: String, label_style: Style) {
+    writeln!(
+        out,
+        "{:>width$} : {}",
+        label.style(label_style),
+        value,
+        width = LABEL_WIDTH
+    )
+    .ok();
+}
+
+/// Print an aligned section header
+fn print_section(out: &mut impl Write, label: &str, label_style: Style) {
+    writeln!(out).ok();
+    writeln!(
+        out,
+        "{:>width$} :",
+        label.style(label_style),
+        width = LABEL_WIDTH
+    )
+    .ok();
+}
+
+/// Print sub-items with proper indentation
+fn print_sub_item(out: &mut impl Write, value: &str, value_style: Style) {
+    writeln!(
+        out,
+        "{:>width$}   {}",
+        "",
+        value.style(value_style),
+        width = LABEL_WIDTH
+    )
+    .ok();
+}
+
+/// Module table entry for tabled output
+#[derive(Tabled)]
+struct ModuleRow {
+    #[tabled(rename = "Module")]
+    name: String,
+    #[tabled(rename = "Size")]
+    size: String,
+    #[tabled(rename = "Path")]
+    path: String,
+}
+
+/// Handle summary row for tabled output
+#[derive(Tabled)]
+struct HandleSummaryRow {
+    #[tabled(rename = "Type")]
+    object_type: String,
+    #[tabled(rename = "Count")]
+    count: usize,
+}
+
+/// Process row for multi-process tables
+#[derive(Tabled)]
+struct ProcessRow {
+    #[tabled(rename = "PID")]
+    pid: u32,
+    #[tabled(rename = "Name")]
+    name: String,
+    #[tabled(rename = "Memory")]
+    memory: String,
+    #[tabled(rename = "User")]
+    user: String,
+}
+
+/// Network connection row for tables
+#[derive(Tabled)]
+struct ConnectionRow {
+    #[tabled(rename = "Proto")]
+    protocol: String,
+    #[tabled(rename = "Local Address")]
+    local: String,
+    #[tabled(rename = "Remote Address")]
+    remote: String,
+    #[tabled(rename = "State")]
+    state: String,
+}
+
+/// Calculate total memory usage of a process tree (target + all descendants)
+#[cfg(windows)]
+fn get_process_tree_memory(pid: u32) -> Option<u64> {
+    use witr_platform_windows::get_memory_usage;
+
+    let processes = list_processes().ok()?;
+
+    // Find all descendants recursively
+    let mut tree_pids = vec![pid];
+    let mut i = 0;
+    while i < tree_pids.len() {
+        let parent_pid = tree_pids[i];
+        for proc in processes.values() {
+            if proc.ppid == parent_pid && !tree_pids.contains(&proc.pid) {
+                tree_pids.push(proc.pid);
+            }
+        }
+        i += 1;
+    }
+
+    // Sum memory of all processes in the tree
+    let mut total: u64 = 0;
+    for &child_pid in &tree_pids {
+        if let Ok(mem) = get_memory_usage(child_pid) {
+            total += mem;
+        }
+    }
+
+    if total > 0 {
+        Some(total)
+    } else {
+        None
+    }
+}
+
+/// Print the handles section with table format
+#[cfg(windows)]
+fn print_handles_table(out: &mut impl Write, handles: &[HandleInfo], cli: &Cli, colors: &Colors) {
+    // Group handles by type
+    let mut by_type: std::collections::HashMap<&str, Vec<&HandleInfo>> =
+        std::collections::HashMap::new();
+    for handle in handles {
+        by_type.entry(&handle.object_type).or_default().push(handle);
+    }
+
+    // Sort types by count (descending)
+    let mut types: Vec<_> = by_type.into_iter().collect();
+    types.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+
+    print_section(out, "Handles", colors.header);
+    print_sub_item(out, &format!("({} open)", handles.len()), colors.dim);
+    writeln!(out).ok();
+
+    // Create summary table
+    let summary_rows: Vec<HandleSummaryRow> = types
+        .iter()
+        .map(|(type_name, type_handles)| HandleSummaryRow {
+            object_type: type_name.to_string(),
+            count: type_handles.len(),
+        })
+        .collect();
+
+    let table = Table::new(&summary_rows)
+        .with(TableStyle::rounded())
+        .with(Modify::new(Columns::single(1)).with(Alignment::right()))
+        .to_string();
+
+    for line in table.lines() {
+        writeln!(out, "  {}", line).ok();
+    }
+
+    // In verbose mode, show individual handles for key types
+    if cli.verbose {
+        writeln!(out).ok();
+        for (type_name, type_handles) in &types {
+            if !type_handles.is_empty() && (*type_name == "File" || *type_name == "Key") {
+                writeln!(out, "  {} {}:", "▸".style(colors.info), type_name).ok();
+                for handle in type_handles.iter().take(15) {
+                    let name = handle.name.as_deref().unwrap_or("<unnamed>");
+                    writeln!(
+                        out,
+                        "    {} {}",
+                        format!("0x{:04X}", handle.handle_value).style(colors.dim),
+                        name.style(colors.dim)
+                    )
+                    .ok();
+                }
+                if type_handles.len() > 15 {
+                    writeln!(
+                        out,
+                        "    {} ... and {} more",
+                        "".style(colors.dim),
+                        type_handles.len() - 15
+                    )
+                    .ok();
+                }
+            }
+        }
+    }
+
+    writeln!(out).ok();
+}
+
+/// Print performance metrics section
+#[cfg(windows)]
+fn print_perf_section(
+    out: &mut impl Write,
+    perf: &witr_platform_windows::ProcessPerformance,
+    colors: &Colors,
+) {
+    use witr_platform_windows::perf::{format_bytes, format_duration};
+
+    print_section(out, "Performance", colors.header);
+
+    // CPU times
+    writeln!(out).ok();
+    print_sub_item(out, "CPU Time:", colors.info);
+    print_sub_item(
+        out,
+        &format!("  User:   {}", format_duration(perf.cpu.user_seconds())),
+        colors.dim,
+    );
+    print_sub_item(
+        out,
+        &format!("  Kernel: {}", format_duration(perf.cpu.kernel_seconds())),
+        colors.dim,
+    );
+    print_sub_item(
+        out,
+        &format!("  Total:  {}", format_duration(perf.cpu.total_seconds())),
+        colors.dim,
+    );
+
+    // I/O stats
+    writeln!(out).ok();
+    print_sub_item(out, "I/O Statistics:", colors.info);
+    print_sub_item(
+        out,
+        &format!(
+            "  Read:   {} ({} ops)",
+            format_bytes(perf.io.read_bytes),
+            perf.io.read_operations
+        ),
+        colors.dim,
+    );
+    print_sub_item(
+        out,
+        &format!(
+            "  Write:  {} ({} ops)",
+            format_bytes(perf.io.write_bytes),
+            perf.io.write_operations
+        ),
+        colors.dim,
+    );
+    if perf.io.other_bytes > 0 || perf.io.other_operations > 0 {
+        print_sub_item(
+            out,
+            &format!(
+                "  Other:  {} ({} ops)",
+                format_bytes(perf.io.other_bytes),
+                perf.io.other_operations
+            ),
+            colors.dim,
+        );
+    }
+
+    writeln!(out).ok();
+}
+
+/// Print network connections section
+#[cfg(windows)]
+fn print_network_section(out: &mut impl Write, connections: &[NetworkConnection], colors: &Colors) {
+    print_section(out, "Network", colors.header);
+    print_sub_item(
+        out,
+        &format!("({} connections)", connections.len()),
+        colors.dim,
+    );
+    writeln!(out).ok();
+
+    // Build table rows
+    let rows: Vec<ConnectionRow> = connections
+        .iter()
+        .map(|conn| {
+            let local = format!("{}:{}", conn.local_addr, conn.local_port);
+            let remote = match (&conn.remote_addr, conn.remote_port) {
+                (Some(addr), Some(port)) => format!("{}:{}", addr, port),
+                _ => "-".to_string(),
+            };
+            let state = conn
+                .state
+                .as_ref()
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "-".to_string());
+
+            ConnectionRow {
+                protocol: conn.protocol.to_string(),
+                local,
+                remote,
+                state,
+            }
+        })
+        .collect();
+
+    let table = Table::new(&rows).with(TableStyle::rounded()).to_string();
+
+    for line in table.lines() {
+        writeln!(out, "  {}", line).ok();
+    }
+
+    writeln!(out).ok();
+}
+
 /// Print a colored human-readable report
 fn print_colored_report(report: &Report, cli: &Cli, colors: &Colors) {
     let stdout = io::stdout();
     let mut out = stdout.lock();
 
-    // Process info - compact format like screenshot
-    if let Some(proc) = &report.process {
-        // Process name with PID and optional flags
-        let mut flags: Vec<String> = Vec::new();
+    const ONE_GB: u64 = 1024 * 1024 * 1024;
 
-        // Check for high memory usage (>1GB)
-        const ONE_GB: u64 = 1024 * 1024 * 1024;
+    // Process info section
+    if let Some(proc) = &report.process {
+        // Build flags
+        let mut flags: Vec<String> = Vec::new();
         if let Some(mem) = proc.memory_bytes {
             if mem > ONE_GB {
                 flags.push("high-mem".to_string());
@@ -800,96 +1218,106 @@ fn print_colored_report(report: &Report, cli: &Cli, colors: &Colors) {
         let flags_str = if flags.is_empty() {
             String::new()
         } else {
-            format!(" [{}]", flags.join(", "))
+            format!(
+                " {}",
+                format!("[{}]", flags.join(", ")).style(colors.warning)
+            )
         };
 
-        writeln!(
-            out,
-            "{}: {} (PID {}){}",
-            "Process".style(colors.header),
+        // Process row with name, PID, and flags
+        let process_value = format!(
+            "{} (pid {}){}",
             proc.name().style(colors.highlight),
             proc.pid.to_string().style(colors.info),
-            flags_str.style(colors.warning)
-        )
-        .ok();
+            flags_str
+        );
+        print_row_raw(&mut out, "Process", process_value, colors.header);
 
         // User
         if let Some(user) = &proc.user {
-            writeln!(
-                out,
-                "  {}: {}",
-                "User".style(colors.dim),
-                user.style(colors.info)
-            )
-            .ok();
+            print_row(&mut out, "User", user, colors.header, colors.info);
         }
 
         // Command (image path)
         if let Some(path) = &proc.image_path {
-            writeln!(
-                out,
-                "  {}: {}",
-                "Command".style(colors.dim),
-                path.as_str().style(colors.dim)
-            )
-            .ok();
+            print_row(&mut out, "Command", path, colors.header, colors.dim);
         }
 
-        // Memory usage
-        if let Some(mem) = proc.memory_bytes {
-            writeln!(
-                out,
-                "  {}: {}",
-                "Memory".style(colors.dim),
-                format_memory_size(mem).style(if mem > ONE_GB {
-                    colors.warning
-                } else {
-                    colors.dim
-                })
-            )
-            .ok();
+        // Command line arguments (truncated if too long)
+        if let Some(cmdline) = &proc.cmdline {
+            let display_cmdline = if cmdline.len() > 80 {
+                format!("{}...", &cmdline[..77])
+            } else {
+                cmdline.clone()
+            };
+            print_row(
+                &mut out,
+                "Args",
+                &display_cmdline,
+                colors.header,
+                colors.dim,
+            );
         }
 
-        // Working directory
-        if let Some(ref cwd) = proc.working_dir {
-            writeln!(
-                out,
-                "  {}: {}",
-                "Working Dir".style(colors.dim),
-                cwd.style(colors.dim)
-            )
-            .ok();
-        }
-
-        // Started time (relative + absolute)
+        // Started time
         if let Some(start_time) = &proc.start_time {
             let relative = format_relative_time(start_time);
             let absolute = format_absolute_time(start_time);
-            writeln!(
-                out,
-                "  {}: {} ({})",
-                "Started".style(colors.dim),
+            let time_value = format!(
+                "{} ({})",
                 relative.style(colors.dim),
                 absolute.style(colors.dim)
-            )
-            .ok();
+            );
+            print_row_raw(&mut out, "Started", time_value, colors.header);
         }
 
-        writeln!(out).ok();
+        // Thread count
+        if let Some(threads) = proc.thread_count {
+            print_row(
+                &mut out,
+                "Threads",
+                &threads.to_string(),
+                colors.header,
+                colors.dim,
+            );
+        }
     }
 
-    // "Why It Exists" section - compact format
-    writeln!(out, "{}", "Why It Exists".style(colors.header)).ok();
+    // Why It Exists section
+    print_section(&mut out, "Why It Exists", colors.header);
 
-    // Ancestry (show parent chain)
+    // Ancestry chain
     if !report.ancestry.is_empty() {
-        write!(out, "  {}: ", "Ancestry".style(colors.dim)).ok();
         let chain: Vec<String> = report
             .ancestry
             .iter()
-            .map(|node| format!("{} (PID {})", node.process.name(), node.process.pid))
+            .rev() // Reverse to show from root to target
+            .map(|node| {
+                let name = if node.relation == witr_core::AncestryRelation::Orphaned {
+                    "exited"
+                } else {
+                    node.process.name()
+                };
+                format!(
+                    "{} (pid {})",
+                    name.style(colors.info),
+                    node.process.pid.to_string().style(colors.dim)
+                )
+            })
             .collect();
-        writeln!(out, "{}", chain.join(" → ").style(colors.highlight)).ok();
+
+        // Add target process at the end
+        if let Some(proc) = &report.process {
+            let mut full_chain = chain;
+            full_chain.push(format!(
+                "{} (pid {})",
+                proc.name().style(colors.highlight),
+                proc.pid.to_string().style(colors.dim)
+            ));
+            print_sub_item(&mut out, &full_chain.join(" → "), Style::new());
+        } else {
+            print_sub_item(&mut out, &chain.join(" → "), Style::new());
+        }
     }
 
     // Source classification
@@ -902,84 +1330,246 @@ fn print_colored_report(report: &Report, cli: &Cli, colors: &Colors) {
         SourceKind::Unknown => colors.dim,
     };
 
-    writeln!(
-        out,
-        "  {}: {}",
-        "Source".style(colors.dim),
-        report.source.description.style(kind_style)
-    )
-    .ok();
+    print_row(
+        &mut out,
+        "Source",
+        &report.source.description,
+        colors.header,
+        kind_style,
+    );
 
-    if let Some(service) = &report.source.service_name {
-        writeln!(
-            out,
-            "    {}: {}",
-            "Service".style(colors.dim),
-            service.style(colors.info)
-        )
-        .ok();
+    // Working directory
+    if let Some(proc) = &report.process {
+        if let Some(ref cwd) = proc.working_dir {
+            print_row(&mut out, "Working Dir", cwd, colors.header, colors.dim);
+        }
     }
 
-    writeln!(out).ok();
+    // Memory section
+    if let Some(proc) = &report.process {
+        if let Some(target_mem) = proc.memory_bytes {
+            print_section(&mut out, "Memory", colors.header);
+
+            let target_label = format!("Target PID size : {}", format_memory_size(target_mem));
+            print_sub_item(
+                &mut out,
+                &format!("- {}", target_label),
+                if target_mem > ONE_GB {
+                    colors.warning
+                } else {
+                    colors.dim
+                },
+            );
+
+            #[cfg(windows)]
+            if let Some(tree_mem) = get_process_tree_memory(proc.pid) {
+                let tree_label = format!("Process tree    : {}", format_memory_size(tree_mem));
+                print_sub_item(
+                    &mut out,
+                    &format!("- {}", tree_label),
+                    if tree_mem > ONE_GB {
+                        colors.warning
+                    } else {
+                        colors.dim
+                    },
+                );
+            }
+        }
+    }
+
+    // Warnings section
+    if !report.warnings.is_empty() {
+        print_section(&mut out, "Warnings", colors.warning);
+        for warning in &report.warnings {
+            print_sub_item(
+                &mut out,
+                &format!("• {}", format_warning(warning)),
+                colors.warning,
+            );
+        }
+    }
 
     // Evidence (verbose only)
     if cli.verbose && !report.evidence.is_empty() {
-        writeln!(out, "{}", "Evidence".style(colors.header)).ok();
-        writeln!(out, "{}", "─".repeat(40).style(colors.dim)).ok();
-
+        print_section(&mut out, "Evidence", colors.header);
         for ev in &report.evidence {
             let conf_style = match ev.confidence {
                 Confidence::High => colors.success,
                 Confidence::Medium => colors.warning,
                 Confidence::Low => colors.dim,
             };
-
-            writeln!(
-                out,
-                "  {} {} {}",
-                "•".style(conf_style),
+            let evidence_line = format!(
+                "• {} {}",
                 ev.fact,
                 format!("[{:?}]", ev.confidence).style(conf_style)
-            )
-            .ok();
+            );
+            print_sub_item(&mut out, &evidence_line, Style::new());
 
             if let Some(details) = &ev.details {
-                writeln!(out, "    {}", details.style(colors.dim)).ok();
+                print_sub_item(&mut out, &format!("  {}", details), colors.dim);
             }
         }
-
-        writeln!(out).ok();
     }
 
-    // Warnings - compact format like screenshot
-    if !report.warnings.is_empty() {
-        for warning in &report.warnings {
-            writeln!(
-                out,
-                "{} {}",
-                "⚠".style(colors.warning),
-                format_warning(warning).style(colors.warning)
-            )
-            .ok();
+    // Modules section (with table for many modules)
+    #[cfg(windows)]
+    if cli.modules {
+        if let Some(proc) = &report.process {
+            match list_modules(proc.pid) {
+                Ok(modules) => {
+                    print_section(&mut out, "Modules", colors.header);
+                    print_sub_item(&mut out, &format!("({} loaded)", modules.len()), colors.dim);
+                    writeln!(out).ok();
+
+                    // Use table for modules (show first 50 in table)
+                    let module_rows: Vec<ModuleRow> = modules
+                        .iter()
+                        .take(if cli.verbose { 100 } else { 30 })
+                        .map(|m| ModuleRow {
+                            name: m.name.clone(),
+                            size: format_module_size(m.size),
+                            path: if cli.verbose {
+                                m.path.clone()
+                            } else {
+                                // Truncate path for non-verbose
+                                if m.path.len() > 50 {
+                                    format!("...{}", &m.path[m.path.len() - 47..])
+                                } else {
+                                    m.path.clone()
+                                }
+                            },
+                        })
+                        .collect();
+
+                    let table = Table::new(&module_rows)
+                        .with(TableStyle::rounded())
+                        .with(Modify::new(Columns::single(1)).with(Alignment::right()))
+                        .to_string();
+
+                    for line in table.lines() {
+                        writeln!(out, "  {}", line).ok();
+                    }
+
+                    if modules.len() > if cli.verbose { 100 } else { 30 } {
+                        writeln!(
+                            out,
+                            "  {} ... and {} more (use -v to see more)",
+                            "".style(colors.dim),
+                            modules.len() - if cli.verbose { 100 } else { 30 }
+                        )
+                        .ok();
+                    }
+                    writeln!(out).ok();
+                }
+                Err(e) => {
+                    print_sub_item(
+                        &mut out,
+                        &format!("⚠ Could not list modules: {}", e),
+                        colors.warning,
+                    );
+                }
+            }
         }
-        writeln!(out).ok();
+    }
+
+    // Handles section (with table)
+    #[cfg(windows)]
+    if cli.handles {
+        if let Some(proc) = &report.process {
+            match list_handles(proc.pid) {
+                Ok(handles) => {
+                    print_handles_table(&mut out, &handles, cli, colors);
+                }
+                Err(e) => {
+                    print_sub_item(
+                        &mut out,
+                        &format!("⚠ Could not list handles: {}", e),
+                        colors.warning,
+                    );
+                }
+            }
+        }
+    }
+
+    // Performance metrics section
+    #[cfg(windows)]
+    if cli.perf {
+        if let Some(proc) = &report.process {
+            match get_process_performance(proc.pid) {
+                Ok(perf) => {
+                    print_perf_section(&mut out, &perf, colors);
+                }
+                Err(e) => {
+                    print_sub_item(
+                        &mut out,
+                        &format!("⚠ Could not get performance metrics: {}", e),
+                        colors.warning,
+                    );
+                }
+            }
+        }
+    }
+
+    // Network connections (if --net flag is used)
+    #[cfg(windows)]
+    if cli.net {
+        if let Some(proc) = &report.process {
+            match get_connections_for_pid(proc.pid) {
+                Ok(connections) if !connections.is_empty() => {
+                    print_network_section(&mut out, &connections, colors);
+                }
+                Ok(_) => {
+                    print_section(&mut out, "Network", colors.header);
+                    print_sub_item(&mut out, "(no connections)", colors.dim);
+                    writeln!(out).ok();
+                }
+                Err(e) => {
+                    print_sub_item(
+                        &mut out,
+                        &format!("⚠ Could not get network connections: {}", e),
+                        colors.warning,
+                    );
+                }
+            }
+        }
+    }
+
+    // Environment variables (verbose mode only)
+    #[cfg(windows)]
+    if cli.verbose {
+        if let Some(proc) = &report.process {
+            match get_interesting_env_vars(proc.pid) {
+                Ok(env_vars) if !env_vars.is_empty() => {
+                    print_section(&mut out, "Environment", colors.header);
+                    for var in &env_vars {
+                        let display_value = if var.value.len() > 60 {
+                            format!("{}...", &var.value[..57])
+                        } else {
+                            var.value.clone()
+                        };
+                        print_sub_item(
+                            &mut out,
+                            &format!("{}: {}", var.name, display_value),
+                            colors.dim,
+                        );
+                    }
+                    writeln!(out).ok();
+                }
+                Ok(_) => {}  // No interesting env vars found
+                Err(_) => {} // Silently ignore errors (access denied, etc.)
+            }
+        }
     }
 
     // Errors
     if !report.errors.is_empty() {
-        writeln!(out, "{}", "Errors".style(colors.error)).ok();
-        writeln!(out, "{}", "─".repeat(40).style(colors.dim)).ok();
-
+        print_section(&mut out, "Errors", colors.error);
         for error in &report.errors {
-            writeln!(
-                out,
-                "  {} {}",
-                "✖".style(colors.error),
-                error.style(colors.error)
-            )
-            .ok();
+            print_sub_item(&mut out, &format!("✖ {}", error), colors.error);
         }
     }
+
+    writeln!(out).ok();
 }
 
 /// Print a colored ancestry tree

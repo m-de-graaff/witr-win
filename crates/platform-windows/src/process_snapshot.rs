@@ -1,12 +1,14 @@
 //! Process snapshot using CreateToolhelp32Snapshot
 //!
-//! Provides a point-in-time snapshot of all processes with their PIDs and PPIDs.
+//! Provides a point-in-time snapshot of all processes with their PIDs and PPIDs,
+//! as well as module/DLL enumeration for processes.
 
 use crate::error::{WinError, WinResult};
 use std::collections::HashMap;
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
 use windows::Win32::System::Diagnostics::ToolHelp::{
-    CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
+    CreateToolhelp32Snapshot, Module32FirstW, Module32NextW, Process32FirstW, Process32NextW,
+    MODULEENTRY32W, PROCESSENTRY32W, TH32CS_SNAPMODULE, TH32CS_SNAPMODULE32, TH32CS_SNAPPROCESS,
 };
 
 /// A process entry from the snapshot
@@ -93,6 +95,68 @@ pub fn get_process_entry(pid: u32) -> WinResult<ProcessEntry> {
 fn wchar_to_string(wchars: &[u16]) -> String {
     let len = wchars.iter().position(|&c| c == 0).unwrap_or(wchars.len());
     String::from_utf16_lossy(&wchars[..len])
+}
+
+/// Information about a loaded module/DLL
+#[derive(Debug, Clone)]
+pub struct ModuleEntry {
+    /// Module name (filename only)
+    pub name: String,
+    /// Full path to the module
+    pub path: String,
+    /// Base address where module is loaded
+    pub base_address: usize,
+    /// Size of the module in bytes
+    pub size: u32,
+}
+
+/// List all modules (DLLs) loaded by a process
+///
+/// Returns a vector of ModuleEntry for each loaded module.
+pub fn list_modules(pid: u32) -> WinResult<Vec<ModuleEntry>> {
+    let mut modules = Vec::new();
+
+    unsafe {
+        // Use TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32 to get both 32-bit and 64-bit modules
+        let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPMODULE | TH32CS_SNAPMODULE32, pid)
+            .map_err(|e| {
+                if e.code().0 as u32 == 0x80070005 {
+                    WinError::AccessDenied { pid }
+                } else {
+                    WinError::SnapshotFailed(e.message().to_string())
+                }
+            })?;
+
+        let _handle = SnapshotHandle(snapshot);
+
+        // Initialize the module entry structure
+        let mut entry = MODULEENTRY32W {
+            dwSize: std::mem::size_of::<MODULEENTRY32W>() as u32,
+            ..Default::default()
+        };
+
+        // Get first module
+        if Module32FirstW(snapshot, &mut entry).is_ok() {
+            loop {
+                let name = wchar_to_string(&entry.szModule);
+                let path = wchar_to_string(&entry.szExePath);
+
+                modules.push(ModuleEntry {
+                    name,
+                    path,
+                    base_address: entry.modBaseAddr as usize,
+                    size: entry.modBaseSize,
+                });
+
+                // Get next module
+                if Module32NextW(snapshot, &mut entry).is_err() {
+                    break;
+                }
+            }
+        }
+    }
+
+    Ok(modules)
 }
 
 #[cfg(test)]

@@ -12,7 +12,11 @@ pub mod classifier;
 #[cfg(windows)]
 pub mod error;
 #[cfg(windows)]
+pub mod handles;
+#[cfg(windows)]
 pub mod net;
+#[cfg(windows)]
+pub mod perf;
 #[cfg(windows)]
 pub mod process_query;
 #[cfg(windows)]
@@ -29,7 +33,11 @@ pub use classifier::*;
 #[cfg(windows)]
 pub use error::*;
 #[cfg(windows)]
+pub use handles::*;
+#[cfg(windows)]
 pub use net::*;
+#[cfg(windows)]
+pub use perf::*;
 #[cfg(windows)]
 pub use process_query::*;
 #[cfg(windows)]
