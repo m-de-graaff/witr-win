@@ -41,26 +41,26 @@ Ever wondered *"What started this process?"* or *"Why is something listening on 
 It answers these questions by building a **causal chain** - tracing a process back through its ancestry to identify whether it came from a Windows Service, a Scheduled Task, an interactive user session, or something else entirely.
 
 ```
-$ witr-win --port 3306
+$ witr-win --port 3000
+warning: Process is listening on a public interface
+Listening Interfaces:
+  0.0.0.0:3000 (TCP)
 
-     Process : mysqld (pid 483820) [high-mem]
-        User : mysql
-     Command : /usr/sbin/mysqld
-     Started : 256 days ago (Mon 2025-04-14 15:12:56 +02:00)
+     Process : node.exe (pid 18948)
+        User : ...
+     Command : C:\Program Files\nodejs\node.exe
+        Args : node D:\...\src\app\node_modules\@craco\craco\dist\scripts\start.js
+     Started : 2 hours ago (2026-01-08T08:34:25.4491792Z)
+     Threads : 15
 
 Why It Exists :
-               systemd (pid 1) → mysqld (pid 483820)
-      Source : systemd service (supervisor)
- Working Dir : /var/lib/mysql
+               explorer.exe (pid 13364) → vscode.exe (pid 33404) → vscode.exe (pid 20336) → powershell.exe (pid 19584) → node.exe (pid 40664) → cmd.exe (pid 41268) → node.exe (pid 16412) → node.exe (pid 18948)
+      Source : Interactive session (descendant of explorer.exe)
+ Working Dir : D:\...\src\app
 
       Memory :
-               - Target PID size : 361.1 MB
-               - Process tree    : 2534.6 MB
-
-    Warnings :
-               • Process is using high memory (>1GB RSS)
-               • Process is listening on a public interface
-               • Process has been running for over 90 days
+               - Target PID size : 110.5 MB
+               - Process tree    : 179.2 MB
 ```
 
 ## ✨ Features
