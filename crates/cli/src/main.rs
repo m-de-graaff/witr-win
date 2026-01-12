@@ -603,7 +603,9 @@ fn render_dot_graph(report: &Report) -> String {
   witr-win --pid 1234 --json   Output as JSON for scripting
   witr-win --port 80 --tree    Show ancestry tree for port 80 owner
   witr-win --port 3000 --end   Terminate process on port 3000
-  witr-win --pid 1234 --end    Terminate process by PID")]
+  witr-win --pid 1234 --end    Terminate process by PID
+  witr-win --pid 1234 --watch  Monitor process in real-time
+  witr-win -P 3000 -w          Watch process on port 3000")]
 struct Cli {
     /// Process ID to analyze (alias: p)
     #[arg(long, short = 'p', visible_alias = "p", value_name = "PID")]
@@ -696,6 +698,14 @@ struct Cli {
     /// Terminate the process (use with --pid or --port)
     #[arg(long, short = 'e')]
     end: bool,
+
+    /// Watch mode: monitor process changes in real-time
+    #[arg(long, short = 'w')]
+    watch: bool,
+
+    /// Refresh interval in seconds for watch mode (default: 2)
+    #[arg(long, default_value = "2", value_name = "SECONDS")]
+    interval: u64,
 }
 
 /// Color configuration for output
@@ -867,6 +877,24 @@ fn main() {
     #[cfg(windows)]
     if cli.end {
         let result = handle_end(&cli, &colors);
+        if let Err(e) = result {
+            let exit_code = if e.contains("not found") || e.contains("No process") {
+                exit_codes::ERROR_NOT_FOUND
+            } else if e.contains("Access denied") || e.contains("permission") {
+                exit_codes::ERROR_ACCESS_DENIED
+            } else {
+                exit_codes::ERROR_GENERAL
+            };
+            print_error(&colors, &e);
+            std::process::exit(exit_code);
+        }
+        std::process::exit(exit_codes::SUCCESS);
+    }
+
+    // Handle --watch flag: monitor process in real-time
+    #[cfg(windows)]
+    if cli.watch {
+        let result = handle_watch(&cli, &colors);
         if let Err(e) = result {
             let exit_code = if e.contains("not found") || e.contains("No process") {
                 exit_codes::ERROR_NOT_FOUND
@@ -1159,6 +1187,209 @@ fn handle_end(cli: &Cli, colors: &Colors) -> Result<(), String> {
     }
 
     Ok(())
+}
+
+/// Handle --watch flag: monitor process in real-time
+#[cfg(windows)]
+fn handle_watch(cli: &Cli, colors: &Colors) -> Result<(), String> {
+    use crossterm::{
+        cursor,
+        terminal::{self, ClearType},
+        ExecutableCommand,
+    };
+    use std::time::Duration;
+
+    // Resolve the target PID
+    let target_pid: u32 = if let Some(pid) = cli.pid {
+        pid
+    } else if let Some(port) = cli.port {
+        let pids = pids_for_port(port)
+            .map_err(|e| format!("Failed to find process on port {}: {}", port, e))?;
+        if pids.is_empty() {
+            return Err(format!("No process found listening on port {}", port));
+        }
+        if pids.len() > 1 {
+            print_warning(
+                colors,
+                &format!(
+                    "Multiple processes on port {}, watching first (PID {})",
+                    port, pids[0]
+                ),
+            );
+        }
+        pids[0]
+    } else if let Some(ref name) = cli.name {
+        let processes = list_processes().map_err(|e| format!("Failed to list processes: {}", e))?;
+        let name_lower = name.to_lowercase();
+        let matching: Vec<u32> = processes
+            .values()
+            .filter(|p| p.exe_name.to_lowercase().contains(&name_lower))
+            .map(|p| p.pid)
+            .collect();
+        if matching.is_empty() {
+            return Err(format!("No process found matching '{}'", name));
+        }
+        if matching.len() > 1 {
+            print_warning(
+                colors,
+                &format!(
+                    "Multiple processes match '{}', watching first (PID {})",
+                    name, matching[0]
+                ),
+            );
+        }
+        matching[0]
+    } else {
+        return Err("--watch requires --pid, --port, or a process name".to_string());
+    };
+
+    let interval = Duration::from_secs(cli.interval);
+
+    // Get initial process info for header
+    let initial_processes = list_processes().unwrap_or_default();
+    let proc_name = initial_processes
+        .get(&target_pid)
+        .map(|p| p.exe_name.clone())
+        .unwrap_or_else(|| "Unknown".to_string());
+
+    let mut stdout = io::stdout();
+    let mut iteration = 0u64;
+
+    loop {
+        iteration += 1;
+
+        // Clear screen and move cursor to top
+        let _ = stdout.execute(terminal::Clear(ClearType::All));
+        let _ = stdout.execute(cursor::MoveTo(0, 0));
+
+        // Print header
+        let now = time::OffsetDateTime::now_utc();
+        let time_str = now
+            .format(&time::format_description::parse("[hour]:[minute]:[second]").unwrap())
+            .unwrap_or_else(|_| "??:??:??".to_string());
+
+        println!(
+            "{} {} (PID {}) │ {} │ iteration #{}",
+            "◉".style(colors.success),
+            proc_name.style(colors.highlight),
+            target_pid.to_string().style(colors.dim),
+            time_str.style(colors.dim),
+            iteration
+        );
+        println!("{}", "─".repeat(60).style(colors.dim));
+        println!();
+
+        // Check if process still exists
+        let processes = list_processes().unwrap_or_default();
+        if !processes.contains_key(&target_pid) {
+            println!(
+                "{} Process {} (PID {}) has exited",
+                "✖".style(colors.error),
+                proc_name.style(colors.highlight),
+                target_pid
+            );
+            return Ok(());
+        }
+
+        // Get and display metrics
+        print_watch_metrics(target_pid, colors);
+
+        // Get network connections
+        if let Ok(connections) = get_connections_for_pid(target_pid) {
+            if !connections.is_empty() {
+                println!();
+                println!("{}", "Network Connections:".style(colors.header));
+                for conn in connections.iter().take(10) {
+                    let local = format!("{}:{}", conn.local_addr, conn.local_port);
+                    let remote = match (&conn.remote_addr, conn.remote_port) {
+                        (Some(addr), Some(port)) => format!("{}:{}", addr, port),
+                        _ => "-".to_string(),
+                    };
+                    let state = conn
+                        .state
+                        .as_ref()
+                        .map(|s| s.to_string())
+                        .unwrap_or_else(|| "-".to_string());
+                    println!(
+                        "  {} {} → {} ({})",
+                        conn.protocol.to_string().style(colors.dim),
+                        local.style(colors.info),
+                        remote.style(colors.dim),
+                        state.style(colors.dim)
+                    );
+                }
+                if connections.len() > 10 {
+                    println!(
+                        "  {} ... and {} more",
+                        "".style(colors.dim),
+                        connections.len() - 10
+                    );
+                }
+            }
+        }
+
+        println!();
+        println!("{} Press Ctrl+C to stop watching", "tip:".style(colors.dim));
+
+        // Wait for interval
+        std::thread::sleep(interval);
+    }
+}
+
+/// Print watch mode metrics for a process
+#[cfg(windows)]
+fn print_watch_metrics(pid: u32, colors: &Colors) {
+    use witr_platform_windows::perf::{format_bytes, format_duration};
+
+    // Memory
+    if let Ok(memory) = witr_platform_windows::get_memory_usage(pid) {
+        println!(
+            "{:>12} : {}",
+            "Memory".style(colors.header),
+            format_memory_size(memory).style(colors.info)
+        );
+    }
+
+    // CPU times
+    if let Ok(perf) = get_process_performance(pid) {
+        println!(
+            "{:>12} : {} (user: {}, kernel: {})",
+            "CPU Time".style(colors.header),
+            format_duration(perf.cpu.total_seconds()).style(colors.info),
+            format_duration(perf.cpu.user_seconds()).style(colors.dim),
+            format_duration(perf.cpu.kernel_seconds()).style(colors.dim)
+        );
+
+        // I/O
+        println!(
+            "{:>12} : read {} ({} ops) │ write {} ({} ops)",
+            "I/O".style(colors.header),
+            format_bytes(perf.io.read_bytes).style(colors.info),
+            perf.io.read_operations.to_string().style(colors.dim),
+            format_bytes(perf.io.write_bytes).style(colors.info),
+            perf.io.write_operations.to_string().style(colors.dim)
+        );
+    }
+
+    // Thread count
+    if let Ok(processes) = list_processes() {
+        if let Some(proc) = processes.get(&pid) {
+            println!(
+                "{:>12} : {}",
+                "Threads".style(colors.header),
+                proc.thread_count.to_string().style(colors.info)
+            );
+        }
+    }
+
+    // Handle count
+    if let Ok(handles) = list_handles(pid) {
+        println!(
+            "{:>12} : {}",
+            "Handles".style(colors.header),
+            handles.len().to_string().style(colors.info)
+        );
+    }
 }
 
 /// Handle PID target
