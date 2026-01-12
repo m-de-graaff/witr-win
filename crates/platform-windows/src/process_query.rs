@@ -18,8 +18,8 @@ use windows::Win32::System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY
 use windows::Win32::System::RemoteDesktop::ProcessIdToSessionId;
 use windows::Win32::System::Threading::{
     GetCurrentProcess, GetProcessTimes, OpenProcess, OpenProcessToken, QueryFullProcessImageNameW,
-    PROCESS_NAME_WIN32, PROCESS_QUERY_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION,
-    PROCESS_VM_READ,
+    TerminateProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_INFORMATION,
+    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_TERMINATE, PROCESS_VM_READ,
 };
 
 // FFI for NtQueryInformationProcess (not exposed in windows crate)
@@ -336,6 +336,54 @@ pub fn get_session_id(pid: u32) -> WinResult<u32> {
         })?;
     }
     Ok(session_id)
+}
+
+/// Terminate a process by PID
+///
+/// This function opens the process with PROCESS_TERMINATE access and calls
+/// TerminateProcess. It requires appropriate privileges to terminate the target
+/// process (usually the same user or admin privileges).
+///
+/// # Arguments
+/// * `pid` - The process ID to terminate
+/// * `exit_code` - The exit code to set for the terminated process (typically 1)
+///
+/// # Returns
+/// * `Ok(())` if the process was successfully terminated
+/// * `Err(WinError::AccessDenied)` if we don't have permission to terminate
+/// * `Err(WinError::ProcessNotFound)` if the process doesn't exist
+pub fn terminate_process(pid: u32, exit_code: u32) -> WinResult<()> {
+    unsafe {
+        let handle = OpenProcess(PROCESS_TERMINATE, false, pid).map_err(|e| {
+            if e.code().0 as u32 == 0x80070005 {
+                // ERROR_ACCESS_DENIED
+                WinError::AccessDenied { pid }
+            } else if e.code().0 as u32 == 0x80070057 {
+                // ERROR_INVALID_PARAMETER (process doesn't exist)
+                WinError::ProcessNotFound { pid }
+            } else {
+                WinError::ApiError {
+                    api: "OpenProcess",
+                    message: e.message().to_string(),
+                }
+            }
+        })?;
+
+        let _handle = SafeHandle::new(handle);
+
+        TerminateProcess(handle, exit_code).map_err(|e| {
+            if e.code().0 as u32 == 0x80070005 {
+                WinError::AccessDenied { pid }
+            } else {
+                WinError::ApiError {
+                    api: "TerminateProcess",
+                    message: e.message().to_string(),
+                }
+            }
+        })?;
+
+        Ok(())
+    }
 }
 
 /// Get memory usage (working set size) for a process in bytes

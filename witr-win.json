@@ -1,9 +1,9 @@
 {
-  "version": "0.5.0",
+  "version": "0.6.1",
   "description": "Windows-native CLI tool that explains why a process exists",
   "homepage": "https://github.com/m-de-graaff/witr-win",
   "license": "MIT",
-  "url": "https://github.com/m-de-graaff/witr-win/releases/download/v0.5.0/witr-win.exe",
+  "url": "https://github.com/m-de-graaff/witr-win/releases/download/v0.6.1/witr-win.exe",
   "hash": "sha256:CDF25D21A376DC16315DA9764B196FEA45B91E6A9BA0F2EAAECB8DA4E9E66D0F",
   "bin": "witr-win.exe",
   "checkver": {

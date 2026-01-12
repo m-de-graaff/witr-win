@@ -2,7 +2,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
   <metadata>
     <id>witr-win</id>
-    <version>0.3.14</version>
+    <version>0.6.1</version>
     <title>witr-win</title>
     <authors>Mark de Graaff</authors>
     <owners>m-de-graaff</owners>

@@ -2,7 +2,7 @@ $ErrorActionPreference = 'Stop'
 
 $packageName = 'witr-win'
 $toolsDir = "$(Split-Path -parent $MyInvocation.MyCommand.Definition)"
-$version = '0.2.1'
+$version = '0.6.1'
 $url = "https://github.com/m-de-graaff/witr-win/releases/download/v$version/witr-win.exe"
 $checksumUrl = "https://github.com/m-de-graaff/witr-win/releases/download/v$version/witr-win.exe.sha256"
 

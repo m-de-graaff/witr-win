@@ -30,8 +30,8 @@ const LABEL_WIDTH: usize = 12;
 use witr_platform_windows::{
     analyze_name, analyze_pid, analyze_port, get_connections_for_pid, get_interesting_env_vars,
     get_process_performance, get_security_info, list_handles, list_modules, list_processes,
-    pids_for_port, HandleInfo, IntegrityLevel, NameAnalysisResult, NetworkConnection,
-    PortAnalysisResult, SecurityInfo,
+    pids_for_port, terminate_process, HandleInfo, IntegrityLevel, NameAnalysisResult,
+    NetworkConnection, PortAnalysisResult, SecurityInfo,
 };
 
 /// Update checking module
@@ -601,7 +601,9 @@ fn render_dot_graph(report: &Report) -> String {
   witr-win --port 8080         Find what's listening on port 8080
   witr-win node                Find processes matching 'node'
   witr-win --pid 1234 --json   Output as JSON for scripting
-  witr-win --port 80 --tree    Show ancestry tree for port 80 owner")]
+  witr-win --port 80 --tree    Show ancestry tree for port 80 owner
+  witr-win --port 3000 --end   Terminate process on port 3000
+  witr-win --pid 1234 --end    Terminate process by PID")]
 struct Cli {
     /// Process ID to analyze (alias: p)
     #[arg(long, short = 'p', visible_alias = "p", value_name = "PID")]
@@ -690,6 +692,10 @@ struct Cli {
     /// Launch interactive TUI mode
     #[arg(long, short = 'i')]
     interactive: bool,
+
+    /// Terminate the process (use with --pid or --port)
+    #[arg(long, short = 'e')]
+    end: bool,
 }
 
 /// Color configuration for output
@@ -856,6 +862,24 @@ fn main() {
 
     // Check for updates before executing operations (non-blocking)
     check_and_notify_updates(&colors);
+
+    // Handle --end flag: terminate process(es) by PID or port
+    #[cfg(windows)]
+    if cli.end {
+        let result = handle_end(&cli, &colors);
+        if let Err(e) = result {
+            let exit_code = if e.contains("not found") || e.contains("No process") {
+                exit_codes::ERROR_NOT_FOUND
+            } else if e.contains("Access denied") || e.contains("permission") {
+                exit_codes::ERROR_ACCESS_DENIED
+            } else {
+                exit_codes::ERROR_GENERAL
+            };
+            print_error(&colors, &e);
+            std::process::exit(exit_code);
+        }
+        std::process::exit(exit_codes::SUCCESS);
+    }
 
     // Route to appropriate handler
     let result = if let Some(pid) = cli.pid {
@@ -1069,6 +1093,72 @@ fn resolve_target_to_pids(target: &witr_core::Target) -> Result<Vec<u32>, String
 #[cfg(windows)]
 fn build_report(pid: u32) -> Result<witr_core::Report, String> {
     analyze_pid(pid).map_err(|e| format!("Failed to build report for PID {}: {}", pid, e))
+}
+
+/// Handle --end flag: terminate process(es) by PID, port, or name
+#[cfg(windows)]
+fn handle_end(cli: &Cli, colors: &Colors) -> Result<(), String> {
+    // Collect PIDs to terminate
+    let pids: Vec<u32> = if let Some(pid) = cli.pid {
+        vec![pid]
+    } else if let Some(port) = cli.port {
+        let pids = pids_for_port(port)
+            .map_err(|e| format!("Failed to find process on port {}: {}", port, e))?;
+        if pids.is_empty() {
+            return Err(format!("No process found listening on port {}", port));
+        }
+        pids
+    } else if let Some(ref name) = cli.name {
+        let processes = list_processes().map_err(|e| format!("Failed to list processes: {}", e))?;
+        let name_lower = name.to_lowercase();
+        let pids: Vec<u32> = processes
+            .values()
+            .filter(|p| p.exe_name.to_lowercase().contains(&name_lower))
+            .map(|p| p.pid)
+            .collect();
+        if pids.is_empty() {
+            return Err(format!("No process found matching '{}'", name));
+        }
+        pids
+    } else {
+        return Err("--end requires --pid, --port, or a process name".to_string());
+    };
+
+    // Show what we're about to terminate
+    let processes = list_processes().unwrap_or_default();
+
+    for &pid in &pids {
+        let proc_name = processes
+            .get(&pid)
+            .map(|p| p.exe_name.as_str())
+            .unwrap_or("Unknown");
+
+        print_info(
+            colors,
+            &format!("Terminating {} (PID {})...", proc_name, pid),
+        );
+
+        match terminate_process(pid, 1) {
+            Ok(()) => {
+                eprintln!(
+                    "{} Terminated {} (PID {})",
+                    "success:".style(colors.success),
+                    proc_name,
+                    pid
+                );
+            }
+            Err(e) => {
+                eprintln!(
+                    "{} Failed to terminate PID {}: {}",
+                    "error:".style(colors.error),
+                    pid,
+                    e
+                );
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Handle PID target
